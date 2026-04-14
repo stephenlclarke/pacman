@@ -7,26 +7,13 @@ use crate::pacman::Direction;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InputState {
-    up: bool,
-    down: bool,
-    left: bool,
-    right: bool,
+    direction: Direction,
     quit: bool,
 }
 
 impl InputState {
     pub fn direction(self) -> Direction {
-        if self.up {
-            Direction::Up
-        } else if self.down {
-            Direction::Down
-        } else if self.left {
-            Direction::Left
-        } else if self.right {
-            Direction::Right
-        } else {
-            Direction::Stop
-        }
+        self.direction
     }
 
     pub fn quit_requested(self) -> bool {
@@ -66,21 +53,20 @@ impl InputController {
     }
 
     fn handle_key(&mut self, key_event: KeyEvent) {
-        let is_pressed = matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat);
-        let is_released = matches!(key_event.kind, KeyEventKind::Release);
+        let is_pressed = matches!(key_event.kind, KeyEventKind::Press);
 
         match key_event.code {
-            KeyCode::Up | KeyCode::Char('w') | KeyCode::Char('W') => {
-                update_button(&mut self.state.up, is_pressed, is_released)
+            KeyCode::Up | KeyCode::Char('w') | KeyCode::Char('W') if is_pressed => {
+                self.state.direction = Direction::Up
             }
-            KeyCode::Down | KeyCode::Char('s') | KeyCode::Char('S') => {
-                update_button(&mut self.state.down, is_pressed, is_released)
+            KeyCode::Down | KeyCode::Char('s') | KeyCode::Char('S') if is_pressed => {
+                self.state.direction = Direction::Down
             }
-            KeyCode::Left | KeyCode::Char('a') | KeyCode::Char('A') => {
-                update_button(&mut self.state.left, is_pressed, is_released)
+            KeyCode::Left | KeyCode::Char('a') | KeyCode::Char('A') if is_pressed => {
+                self.state.direction = Direction::Left
             }
-            KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('D') => {
-                update_button(&mut self.state.right, is_pressed, is_released)
+            KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('D') if is_pressed => {
+                self.state.direction = Direction::Right
             }
             KeyCode::Char(' ') if is_pressed => {
                 self.pause_requested = true;
@@ -93,14 +79,6 @@ impl InputController {
     }
 }
 
-fn update_button(button: &mut bool, is_pressed: bool, is_released: bool) {
-    if is_pressed {
-        *button = true;
-    } else if is_released {
-        *button = false;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{InputController, InputState};
@@ -108,21 +86,55 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
     #[test]
-    fn direction_priority_matches_python_tutorial() {
-        let state = InputState {
-            up: false,
-            down: true,
-            left: true,
-            right: true,
-            quit: false,
-        };
+    fn latest_direction_press_replaces_the_queued_turn() {
+        let mut input = InputController::default();
 
-        assert_eq!(state.direction(), Direction::Down);
+        let mut up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        up.kind = KeyEventKind::Press;
+        input.handle_key(up);
+
+        let mut left = KeyEvent::new(KeyCode::Left, KeyModifiers::NONE);
+        left.kind = KeyEventKind::Press;
+        input.handle_key(left);
+
+        assert_eq!(input.direction(), Direction::Left);
     }
 
     #[test]
     fn no_keys_means_stop() {
         assert_eq!(InputState::default().direction(), Direction::Stop);
+    }
+
+    #[test]
+    fn releasing_a_direction_does_not_clear_the_queue() {
+        let mut input = InputController::default();
+
+        let mut up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        up.kind = KeyEventKind::Press;
+        input.handle_key(up);
+
+        up.kind = KeyEventKind::Release;
+        input.handle_key(up);
+
+        assert_eq!(input.direction(), Direction::Up);
+    }
+
+    #[test]
+    fn repeat_events_do_not_override_the_latest_press() {
+        let mut input = InputController::default();
+
+        let mut up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        up.kind = KeyEventKind::Press;
+        input.handle_key(up);
+
+        let mut left = KeyEvent::new(KeyCode::Left, KeyModifiers::NONE);
+        left.kind = KeyEventKind::Press;
+        input.handle_key(left);
+
+        up.kind = KeyEventKind::Repeat;
+        input.handle_key(up);
+
+        assert_eq!(input.direction(), Direction::Left);
     }
 
     #[test]

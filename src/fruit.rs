@@ -16,12 +16,18 @@ pub struct Fruit {
     timer: f32,
     destroy: bool,
     points: u32,
+    sprite_index: usize,
 }
 
 impl Fruit {
     pub fn new(node: NodeId, nodes: &NodeGroup) -> Self {
+        Self::for_level(node, nodes, 0)
+    }
+
+    pub fn for_level(node: NodeId, nodes: &NodeGroup, level_index: u32) -> Self {
         let target = nodes.neighbor(node, Direction::Right).unwrap_or(node);
         let position = (nodes.position(node) + nodes.position(target)) * 0.5;
+        let sprite_index = (level_index as usize) % 6;
 
         Self {
             position,
@@ -31,7 +37,8 @@ impl Fruit {
             lifespan: 5.0,
             timer: 0.0,
             destroy: false,
-            points: 100,
+            points: 100 + level_index * 20,
+            sprite_index,
         }
     }
 
@@ -58,6 +65,10 @@ impl Fruit {
         self.points
     }
 
+    pub fn sprite_index(&self) -> usize {
+        self.sprite_index
+    }
+
     pub fn renderable(&self) -> Circle {
         Circle {
             center: self.position,
@@ -82,6 +93,7 @@ mod tests {
 
         assert_eq!(fruit.position().as_tuple(), (216.0, 320.0));
         assert_eq!(fruit.points(), 100);
+        assert_eq!(fruit.sprite_index(), 0);
     }
 
     #[test]
@@ -95,5 +107,17 @@ mod tests {
         fruit.update(5.1);
 
         assert!(fruit.destroyed());
+    }
+
+    #[test]
+    fn fruit_level_controls_points_and_sprite_cycle() {
+        let nodes = NodeGroup::pacman_maze();
+        let node = nodes
+            .get_node_from_tiles(9.0, 20.0)
+            .expect("fruit spawn node should exist");
+        let fruit = Fruit::for_level(node, &nodes, 7);
+
+        assert_eq!(fruit.points(), 240);
+        assert_eq!(fruit.sprite_index(), 1);
     }
 }

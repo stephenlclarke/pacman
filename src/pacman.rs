@@ -451,6 +451,52 @@ mod tests {
     }
 
     #[test]
+    fn queued_turn_is_taken_at_the_next_intersection() {
+        let nodes = NodeGroup::pacman_maze();
+        let start_node = nodes
+            .get_node_from_tiles(15.0, 26.0)
+            .expect("level 4 pacman start node should exist");
+        let intersection = nodes
+            .get_node_from_tiles(12.0, 26.0)
+            .expect("queued turn intersection should exist");
+        let up_target = nodes
+            .neighbor(intersection, Direction::Up)
+            .expect("queued up turn should be available");
+
+        let mut pacman = NodePacman::new(start_node, &nodes, NodeMovementMode::Reversible);
+        pacman.configure_start(start_node, Direction::Left, Some(Direction::Left), &nodes);
+        pacman.update(0.25, Direction::Up, &nodes);
+
+        assert_eq!(pacman.current_node(), intersection);
+        assert_eq!(pacman.target(), up_target);
+        assert_eq!(pacman.direction(), Direction::Up);
+        assert_eq!(pacman.position(), nodes.position(intersection));
+    }
+
+    #[test]
+    fn latest_requested_turn_replaces_the_previous_queue() {
+        let nodes = NodeGroup::pacman_maze();
+        let start_node = nodes
+            .get_node_from_tiles(15.0, 26.0)
+            .expect("level 4 pacman start node should exist");
+        let intersection = nodes
+            .get_node_from_tiles(12.0, 26.0)
+            .expect("queued turn intersection should exist");
+        let left_target = nodes
+            .neighbor(intersection, Direction::Left)
+            .expect("continuing left should be available");
+
+        let mut pacman = NodePacman::new(start_node, &nodes, NodeMovementMode::Reversible);
+        pacman.configure_start(start_node, Direction::Left, Some(Direction::Left), &nodes);
+        pacman.update(0.25, Direction::Left, &nodes);
+
+        assert_eq!(pacman.current_node(), intersection);
+        assert_eq!(pacman.target(), left_target);
+        assert_eq!(pacman.direction(), Direction::Left);
+        assert_eq!(pacman.position(), nodes.position(intersection));
+    }
+
+    #[test]
     fn access_restrictions_block_pacman_movement() {
         let mut nodes = NodeGroup::pacman_maze();
         let home = nodes.create_home_nodes(11.5, 14.0);

@@ -76,7 +76,11 @@ impl Pellet {
 
 impl PelletGroup {
     pub fn maze1() -> Self {
-        Self::from_text(MAZE_ONE)
+        Self::from_layout(MAZE_ONE)
+    }
+
+    pub fn from_layout(text: &str) -> Self {
+        Self::from_text(text)
     }
 
     pub fn len(&self) -> usize {
@@ -199,5 +203,18 @@ mod tests {
         assert_eq!(pellet.points(), 10);
         assert_eq!(pellets.len(), 243);
         assert_eq!(pellets.num_eaten(), 1);
+    }
+
+    #[test]
+    fn custom_layouts_can_build_their_own_pellet_groups() {
+        let pellets = PelletGroup::from_layout(
+            "
+            . x P
+            x + p
+            ",
+        );
+
+        assert_eq!(pellets.len(), 4);
+        assert_eq!(pellets.power_pellet_count(), 2);
     }
 }

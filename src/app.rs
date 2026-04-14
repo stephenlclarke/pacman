@@ -95,6 +95,10 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
         "spawn-mode" | "level3" => Ok(Stage::Level3),
         "node-restrictions" | "level4" => Ok(Stage::Level4),
         "animate-ghosts" | "level5" => Ok(Stage::Level5),
+        "pacman-death" => Ok(Stage::PacmanDeath),
+        "level-flash" => Ok(Stage::LevelFlash),
+        "more-fruit" => Ok(Stage::MoreFruit),
+        "more-mazes" | "level6" => Ok(Stage::MoreMazes),
         "-h" | "--help" => {
             print_help();
             std::process::exit(0);
@@ -105,7 +109,8 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
                  `node-movement-1`, `node-movement-2`, `node-movement-3`, `level1`, \
                  `maze-basics`, `pacman-maze`, `portals`, `pellets`, `eating-pellets`, \
                  `level2`, `spawn-mode`, `level3`, `node-restrictions`, `level4`, or \
-                 `animate-ghosts`, `level5`, or `--help`."
+                 `animate-ghosts`, `level5`, `pacman-death`, `level-flash`, `more-fruit`, \
+                 `more-mazes`, `level6`, or `--help`."
             )
         }
     }
@@ -135,10 +140,15 @@ Modes:
   level4          Alias for `node-restrictions`.
   animate-ghosts  Render the final Level 5 Animate Ghosts stage.
   level5          Alias for `animate-ghosts`.
+  pacman-death    Render the Level 6 Pacman Death stage.
+  level-flash     Render the Level 6 Level Flash stage.
+  more-fruit      Render the Level 6 More Fruit stage.
+  more-mazes      Render the final Level 6 More Mazes stage.
+  level6          Alias for `more-mazes`.
 
 Controls:
   Arrow keys / WASD  Move Pacman
-  Space              Pause or unpause during Level 4
+  Space              Pause or unpause during gameplay stages
   Q or Esc           Quit"
     );
 }
@@ -188,5 +198,11 @@ mod tests {
     fn level5_alias_maps_to_animate_ghosts() {
         let stage = parse_stage(std::iter::once(String::from("level5"))).expect("stage parsing");
         assert_eq!(stage, Stage::Level5);
+    }
+
+    #[test]
+    fn level6_alias_maps_to_more_mazes() {
+        let stage = parse_stage(std::iter::once(String::from("level6"))).expect("stage parsing");
+        assert_eq!(stage, Stage::MoreMazes);
     }
 }
