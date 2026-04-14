@@ -37,6 +37,7 @@ impl InputState {
 #[derive(Debug, Default)]
 pub struct InputController {
     state: InputState,
+    pause_requested: bool,
 }
 
 impl InputController {
@@ -60,6 +61,10 @@ impl InputController {
         self.state.quit_requested()
     }
 
+    pub fn take_pause_requested(&mut self) -> bool {
+        std::mem::take(&mut self.pause_requested)
+    }
+
     fn handle_key(&mut self, key_event: KeyEvent) {
         let is_pressed = matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat);
         let is_released = matches!(key_event.kind, KeyEventKind::Release);
@@ -76,6 +81,9 @@ impl InputController {
             }
             KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('D') => {
                 update_button(&mut self.state.right, is_pressed, is_released)
+            }
+            KeyCode::Char(' ') if is_pressed => {
+                self.pause_requested = true;
             }
             KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc if is_pressed => {
                 self.state.quit = true;
@@ -95,8 +103,9 @@ fn update_button(button: &mut bool, is_pressed: bool, is_released: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::InputState;
+    use super::{InputController, InputState};
     use crate::pacman::Direction;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
     #[test]
     fn direction_priority_matches_python_tutorial() {
@@ -114,5 +123,16 @@ mod tests {
     #[test]
     fn no_keys_means_stop() {
         assert_eq!(InputState::default().direction(), Direction::Stop);
+    }
+
+    #[test]
+    fn spacebar_requests_a_pause_toggle() {
+        let mut input = InputController::default();
+        let mut key_event = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        key_event.kind = KeyEventKind::Press;
+        input.handle_key(key_event);
+
+        assert!(input.take_pause_requested());
+        assert!(!input.take_pause_requested());
     }
 }

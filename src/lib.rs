@@ -1,5 +1,7 @@
+pub mod actors;
 pub mod app;
 pub mod constants;
+pub mod fruit;
 pub mod game;
 pub mod ghosts;
 pub mod input;
@@ -7,6 +9,7 @@ pub mod kitty;
 pub mod modes;
 pub mod nodes;
 pub mod pacman;
+pub mod pause;
 pub mod pellets;
 pub mod render;
 pub mod stack;
