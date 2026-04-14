@@ -1,6 +1,7 @@
 pub mod actors;
 pub mod animation;
 pub mod app;
+pub mod audio;
 pub mod constants;
 pub mod fruit;
 pub mod game;

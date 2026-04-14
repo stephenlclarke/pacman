@@ -3,7 +3,10 @@ use std::io::Stdout;
 use anyhow::Result;
 use crossterm::{
     cursor::{Hide, Show},
-    event::{KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
+    event::{
+        DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{
         EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size,
@@ -25,7 +28,7 @@ pub struct TerminalGeometry {
 impl TerminalSession {
     pub fn enter(stdout: &mut Stdout) -> Result<Self> {
         enable_raw_mode()?;
-        execute!(stdout, EnterAlternateScreen, Hide)?;
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Hide)?;
 
         let keyboard_enhancements = execute!(
             stdout,
@@ -48,7 +51,7 @@ impl Drop for TerminalSession {
         if self.keyboard_enhancements {
             let _ = execute!(stdout, PopKeyboardEnhancementFlags);
         }
-        let _ = execute!(stdout, Show, LeaveAlternateScreen);
+        let _ = execute!(stdout, DisableMouseCapture, Show, LeaveAlternateScreen);
         let _ = disable_raw_mode();
     }
 }

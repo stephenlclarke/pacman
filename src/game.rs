@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     actors::{EntityKind, GhostKind},
-    constants::{SCREEN_HEIGHT, TILE_HEIGHT, TILE_WIDTH},
+    constants::{
+        BUTTON_CLICK, BUTTON_COLOR, BUTTON_HOVER, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_HEIGHT,
+        TILE_WIDTH, WHITE, YELLOW,
+    },
     fruit::Fruit,
     ghosts::{Ghost, GhostGroup},
     mazedata::MazeSpec,
@@ -13,7 +16,7 @@ use crate::{
     pellets::{PelletGroup, PelletKind},
     render::{FrameData, RenderedImage, Sprite, SpriteAnchor},
     sprites::{FruitSprites, GhostSprites, LifeSprites, MazeSprites, PacmanSprites},
-    text::{StatusText, TextGroup},
+    text::{StatusText, TextGroup, rasterize_text_image},
     vector::Vector2,
 };
 
@@ -37,6 +40,10 @@ pub enum Stage {
     LevelFlash,
     MoreFruit,
     MoreMazes,
+    AddTitleScreen,
+    AddButtons,
+    AddSoundMusic,
+    Level7,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +75,7 @@ struct Level6Config {
     flash_background: bool,
     more_fruit: bool,
     more_mazes: bool,
+    return_to_title: bool,
 }
 
 impl Level6Config {
@@ -76,6 +84,7 @@ impl Level6Config {
             flash_background: false,
             more_fruit: false,
             more_mazes: false,
+            return_to_title: false,
         }
     }
 
@@ -84,6 +93,7 @@ impl Level6Config {
             flash_background: true,
             more_fruit: false,
             more_mazes: false,
+            return_to_title: false,
         }
     }
 
@@ -92,6 +102,7 @@ impl Level6Config {
             flash_background: true,
             more_fruit: true,
             more_mazes: false,
+            return_to_title: false,
         }
     }
 
@@ -100,16 +111,58 @@ impl Level6Config {
             flash_background: true,
             more_fruit: true,
             more_mazes: true,
+            return_to_title: false,
+        }
+    }
+
+    const fn level7() -> Self {
+        Self {
+            flash_background: true,
+            more_fruit: true,
+            more_mazes: true,
+            return_to_title: true,
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GameEvent {
+    TitleScreenEntered,
+    ButtonClicked,
+    GameStarted,
+    SmallPelletEaten,
+    PowerPelletEaten,
+    GhostEaten,
+    FruitEaten,
+    PacmanDied,
+    LevelCompleted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Level7Config {
+    buttons: bool,
+}
+
+impl Level7Config {
+    const fn title_only() -> Self {
+        Self { buttons: false }
+    }
+
+    const fn buttons() -> Self {
+        Self { buttons: true }
+    }
+
+    const fn audio() -> Self {
+        Self { buttons: true }
+    }
+}
+
+#[derive(Debug)]
 pub struct Game {
     scene: Scene,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 enum Scene {
     BlankScreen,
     BasicMovement {
@@ -138,6 +191,7 @@ enum Scene {
     Level4(Box<Level4State>),
     Level5(Box<Level5State>),
     Level6(Box<Level6State>),
+    Level7(Box<Level7State>),
 }
 
 #[derive(Clone, Debug)]
@@ -199,6 +253,35 @@ struct Level6State {
     fruit_captured: Vec<usize>,
     config: Level6Config,
     maze_spec: MazeSpec,
+    events: Vec<GameEvent>,
+    return_to_title_requested: bool,
+}
+
+#[derive(Clone, Debug)]
+struct TitleButtonState {
+    position: Vector2,
+    size: Vector2,
+    normal_image: Arc<RenderedImage>,
+    hover_image: Arc<RenderedImage>,
+    pressed_image: Arc<RenderedImage>,
+    label_image: Arc<RenderedImage>,
+    hovered: bool,
+    pressed: bool,
+}
+
+#[derive(Clone, Debug)]
+struct TitleScreenState {
+    title_image: Arc<RenderedImage>,
+    prompt_image: Arc<RenderedImage>,
+    button: Option<TitleButtonState>,
+}
+
+#[derive(Clone, Debug)]
+struct Level7State {
+    config: Level7Config,
+    title_screen: TitleScreenState,
+    gameplay: Option<Level6State>,
+    events: Vec<GameEvent>,
 }
 
 impl Game {
@@ -323,12 +406,31 @@ impl Game {
             Stage::MoreMazes => {
                 Scene::Level6(Box::new(Level6State::new(Level6Config::more_mazes())))
             }
+            Stage::AddTitleScreen => {
+                Scene::Level7(Box::new(Level7State::new(Level7Config::title_only())))
+            }
+            Stage::AddButtons => Scene::Level7(Box::new(Level7State::new(Level7Config::buttons()))),
+            Stage::AddSoundMusic | Stage::Level7 => {
+                Scene::Level7(Box::new(Level7State::new(Level7Config::audio())))
+            }
         };
 
         Self { scene }
     }
 
     pub fn update(&mut self, dt: f32, requested_direction: Direction, pause_requested: bool) {
+        self.update_with_input(dt, requested_direction, pause_requested, false, None, None);
+    }
+
+    pub fn update_with_input(
+        &mut self,
+        dt: f32,
+        requested_direction: Direction,
+        pause_requested: bool,
+        start_requested: bool,
+        mouse_position: Option<Vector2>,
+        mouse_click_position: Option<Vector2>,
+    ) {
         match &mut self.scene {
             Scene::BlankScreen => {}
             Scene::BasicMovement { pacman } | Scene::Nodes { pacman, .. } => {
@@ -380,6 +482,22 @@ impl Game {
             Scene::Level4(state) => state.update(dt, requested_direction, pause_requested),
             Scene::Level5(state) => state.update(dt, requested_direction, pause_requested),
             Scene::Level6(state) => state.update(dt, requested_direction, pause_requested),
+            Scene::Level7(state) => state.update(
+                dt,
+                requested_direction,
+                pause_requested,
+                start_requested,
+                mouse_position,
+                mouse_click_position,
+            ),
+        }
+    }
+
+    pub fn drain_events(&mut self) -> Vec<GameEvent> {
+        match &mut self.scene {
+            Scene::Level6(state) => state.drain_events(),
+            Scene::Level7(state) => state.drain_events(),
+            _ => Vec::new(),
         }
     }
 
@@ -423,6 +541,7 @@ impl Game {
             Scene::Level4(state) => state.append_renderables(&mut frame),
             Scene::Level5(state) => state.append_renderables(&mut frame),
             Scene::Level6(state) => state.append_renderables(&mut frame),
+            Scene::Level7(state) => state.append_renderables(&mut frame),
         }
 
         frame
@@ -1143,6 +1262,8 @@ impl Level6State {
             fruit_captured,
             config,
             maze_spec,
+            events: Vec::new(),
+            return_to_title_requested: false,
         }
     }
 
@@ -1205,6 +1326,10 @@ impl Level6State {
         }
     }
 
+    fn drain_events(&mut self) -> Vec<GameEvent> {
+        std::mem::take(&mut self.events)
+    }
+
     fn update_score(&mut self, points: u32) {
         self.score += points;
         self.text_group.update_score(self.score);
@@ -1227,6 +1352,7 @@ impl Level6State {
         };
 
         self.update_score(pellet.points());
+        self.events.push(GameEvent::SmallPelletEaten);
 
         if self.pellets.num_eaten() == 30 {
             let (_, position, ghost) = self.maze_spec.inky_start_restriction();
@@ -1241,9 +1367,11 @@ impl Level6State {
 
         if pellet.kind() == PelletKind::PowerPellet {
             self.ghosts.start_freight();
+            self.events.push(GameEvent::PowerPelletEaten);
         }
 
         if self.pellets.is_empty() {
+            self.events.push(GameEvent::LevelCompleted);
             if self.config.flash_background {
                 self.flash_background = true;
                 self.flash_timer = 0.0;
@@ -1286,6 +1414,7 @@ impl Level6State {
                 self.ghosts.ghost_mut(ghost_kind).start_spawn(&self.nodes);
                 self.nodes.allow_home_access(ghost_kind.entity());
                 self.ghosts.update_points();
+                self.events.push(GameEvent::GhostEaten);
             }
             GhostMode::Spawn => {}
             GhostMode::Scatter | GhostMode::Chase => {
@@ -1297,6 +1426,7 @@ impl Level6State {
                 self.life_sprites.remove_image();
                 self.pacman.die();
                 self.ghosts.hide();
+                self.events.push(GameEvent::PacmanDied);
                 let action = if self.lives == 0 {
                     self.text_group.show_status(StatusText::GameOver);
                     Level6Action::RestartGame
@@ -1351,6 +1481,7 @@ impl Level6State {
             if self.config.more_fruit && !self.fruit_captured.contains(&fruit_sprite_index) {
                 self.fruit_captured.push(fruit_sprite_index);
             }
+            self.events.push(GameEvent::FruitEaten);
             self.fruit = None;
         } else if expired {
             self.fruit = None;
@@ -1374,7 +1505,11 @@ impl Level6State {
                 );
             }
             Level6Action::RestartGame => {
-                *self = Self::start_level(1, 5, 0, Vec::new(), self.config);
+                if self.config.return_to_title {
+                    self.return_to_title_requested = true;
+                } else {
+                    *self = Self::start_level(1, 5, 0, Vec::new(), self.config);
+                }
             }
         }
     }
@@ -1465,6 +1600,227 @@ impl Level6State {
     }
 }
 
+impl TitleButtonState {
+    fn new(x: f32, y: f32, width: u32, height: u32, label: &str) -> Self {
+        Self {
+            position: Vector2::new(x, y),
+            size: Vector2::new(width as f32, height as f32),
+            normal_image: button_image(width, height, BUTTON_COLOR, WHITE),
+            hover_image: button_image(width, height, BUTTON_HOVER, WHITE),
+            pressed_image: button_image(width, height, BUTTON_CLICK, WHITE),
+            label_image: rasterize_text_image(label, YELLOW, 16.0),
+            hovered: false,
+            pressed: false,
+        }
+    }
+
+    fn contains(&self, point: Vector2) -> bool {
+        point.x >= self.position.x
+            && point.x <= self.position.x + self.size.x
+            && point.y >= self.position.y
+            && point.y <= self.position.y + self.size.y
+    }
+
+    fn set_mouse_position(&mut self, mouse_position: Option<Vector2>) {
+        self.hovered = mouse_position.is_some_and(|position| self.contains(position));
+        if !self.hovered {
+            self.pressed = false;
+        }
+    }
+
+    fn current_image(&self) -> Arc<RenderedImage> {
+        if self.pressed {
+            self.pressed_image.clone()
+        } else if self.hovered {
+            self.hover_image.clone()
+        } else {
+            self.normal_image.clone()
+        }
+    }
+
+    fn label_position(&self) -> Vector2 {
+        Vector2::new(
+            self.position.x + (self.size.x - self.label_image.width as f32) * 0.5,
+            self.position.y + (self.size.y - self.label_image.height as f32) * 0.5,
+        )
+    }
+
+    fn append_renderables(&self, frame: &mut FrameData) {
+        frame.sprites.push(Sprite {
+            image: self.current_image(),
+            position: self.position,
+            anchor: SpriteAnchor::TopLeft,
+        });
+        frame.sprites.push(Sprite {
+            image: self.label_image.clone(),
+            position: self.label_position(),
+            anchor: SpriteAnchor::TopLeft,
+        });
+    }
+}
+
+impl TitleScreenState {
+    fn new(show_button: bool) -> Self {
+        let button = show_button.then(|| {
+            TitleButtonState::new(
+                SCREEN_WIDTH as f32 / 2.0 - 60.0,
+                SCREEN_HEIGHT as f32 / 2.0 - 30.0,
+                120,
+                60,
+                "START",
+            )
+        });
+        let prompt_image = rasterize_text_image("PRESS ENTER", WHITE, 16.0);
+
+        Self {
+            title_image: rasterize_text_image("PACMAN", YELLOW, 64.0),
+            prompt_image,
+            button,
+        }
+    }
+
+    fn update(&mut self, mouse_position: Option<Vector2>) {
+        if let Some(button) = &mut self.button {
+            button.set_mouse_position(mouse_position);
+        }
+    }
+
+    fn start_requested(
+        &mut self,
+        start_requested: bool,
+        mouse_click_position: Option<Vector2>,
+    ) -> bool {
+        if start_requested {
+            return true;
+        }
+
+        let Some(button) = &mut self.button else {
+            return false;
+        };
+
+        if mouse_click_position.is_some_and(|position| button.contains(position)) {
+            button.pressed = true;
+            return true;
+        }
+
+        false
+    }
+
+    fn append_renderables(&self, frame: &mut FrameData) {
+        frame.sprites.push(Sprite {
+            image: self.title_image.clone(),
+            position: Vector2::new(32.0, 10.0),
+            anchor: SpriteAnchor::TopLeft,
+        });
+
+        if let Some(button) = &self.button {
+            button.append_renderables(frame);
+        } else {
+            frame.sprites.push(Sprite {
+                image: self.prompt_image.clone(),
+                position: Vector2::new(
+                    (SCREEN_WIDTH as f32 - self.prompt_image.width as f32) * 0.5,
+                    SCREEN_HEIGHT as f32 * 0.5,
+                ),
+                anchor: SpriteAnchor::TopLeft,
+            });
+        }
+    }
+}
+
+impl Level7State {
+    fn new(config: Level7Config) -> Self {
+        Self {
+            config,
+            title_screen: TitleScreenState::new(config.buttons),
+            gameplay: None,
+            events: vec![GameEvent::TitleScreenEntered],
+        }
+    }
+
+    fn update(
+        &mut self,
+        dt: f32,
+        requested_direction: Direction,
+        pause_requested: bool,
+        start_requested: bool,
+        mouse_position: Option<Vector2>,
+        mouse_click_position: Option<Vector2>,
+    ) {
+        if let Some(gameplay) = &mut self.gameplay {
+            gameplay.update(dt, requested_direction, pause_requested);
+            self.events.extend(gameplay.drain_events());
+
+            if gameplay.return_to_title_requested {
+                self.gameplay = None;
+                self.title_screen = TitleScreenState::new(self.config.buttons);
+                self.events.push(GameEvent::TitleScreenEntered);
+            }
+            return;
+        }
+
+        self.title_screen.update(mouse_position);
+        let should_start = self
+            .title_screen
+            .start_requested(start_requested, mouse_click_position);
+
+        if mouse_click_position.is_some_and(|position| {
+            self.config.buttons
+                && self
+                    .title_screen
+                    .button
+                    .as_ref()
+                    .is_some_and(|button| button.contains(position))
+        }) {
+            self.events.push(GameEvent::ButtonClicked);
+        }
+
+        if should_start {
+            self.gameplay = Some(Level6State::new(Level6Config::level7()));
+            self.events.push(GameEvent::GameStarted);
+        }
+    }
+
+    fn drain_events(&mut self) -> Vec<GameEvent> {
+        std::mem::take(&mut self.events)
+    }
+
+    fn append_renderables(&self, frame: &mut FrameData) {
+        if let Some(gameplay) = &self.gameplay {
+            gameplay.append_renderables(frame);
+        } else {
+            self.title_screen.append_renderables(frame);
+        }
+    }
+}
+
+fn button_image(width: u32, height: u32, fill: [u8; 4], border: [u8; 4]) -> Arc<RenderedImage> {
+    let mut pixels = vec![0; width as usize * height as usize * 4];
+    let border_thickness = 3;
+
+    for y in 0..height {
+        for x in 0..width {
+            let color = if x < border_thickness
+                || y < border_thickness
+                || x >= width - border_thickness
+                || y >= height - border_thickness
+            {
+                border
+            } else {
+                fill
+            };
+            let index = ((y * width + x) as usize) * 4;
+            pixels[index..index + 4].copy_from_slice(&color);
+        }
+    }
+
+    Arc::new(RenderedImage {
+        width,
+        height,
+        pixels,
+    })
+}
+
 fn sprite_draw_position(position: Vector2) -> Vector2 {
     position - Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0)
 }
@@ -1472,11 +1828,11 @@ fn sprite_draw_position(position: Vector2) -> Vector2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        Game, Level4Action, Level4State, Level5State, Level6Config, Level6State, Stage,
+        Game, GameEvent, Level4Action, Level4State, Level5State, Level6Config, Level6State, Stage,
         sprite_draw_position,
     };
     use crate::{
-        constants::{TILE_HEIGHT, TILE_WIDTH},
+        constants::{SCREEN_HEIGHT, SCREEN_WIDTH, TILE_HEIGHT, TILE_WIDTH},
         nodes::NodeGroup,
         pacman::Direction,
         pellets::PelletGroup,
@@ -1690,5 +2046,69 @@ mod tests {
         state.update(0.2, Direction::Stop, false);
 
         assert_ne!(before.pixels, state.pacman_sprites.current().pixels);
+    }
+
+    #[test]
+    fn level7_title_screen_emits_an_entered_event() {
+        let mut game = Game::new(Stage::AddTitleScreen);
+
+        assert_eq!(game.drain_events(), vec![GameEvent::TitleScreenEntered]);
+    }
+
+    #[test]
+    fn level7_enter_starts_the_gameplay_screen() {
+        let mut game = Game::new(Stage::AddTitleScreen);
+        let _ = game.drain_events();
+
+        game.update_with_input(0.0, Direction::Stop, false, true, None, None);
+
+        let events = game.drain_events();
+        assert_eq!(events, vec![GameEvent::GameStarted]);
+        assert!(game.frame().background.is_some());
+    }
+
+    #[test]
+    fn level7_button_click_starts_the_gameplay_screen() {
+        let mut game = Game::new(Stage::AddButtons);
+        let _ = game.drain_events();
+        let button_center = Vector2::new(SCREEN_WIDTH as f32 / 2.0, SCREEN_HEIGHT as f32 / 2.0);
+
+        game.update_with_input(
+            0.0,
+            Direction::Stop,
+            false,
+            false,
+            Some(button_center),
+            Some(button_center),
+        );
+
+        let events = game.drain_events();
+        assert_eq!(
+            events,
+            vec![GameEvent::ButtonClicked, GameEvent::GameStarted]
+        );
+        assert!(game.frame().background.is_some());
+    }
+
+    #[test]
+    fn level7_button_click_uses_the_click_position() {
+        let mut game = Game::new(Stage::AddButtons);
+        let _ = game.drain_events();
+        let button_center = Vector2::new(SCREEN_WIDTH as f32 / 2.0, SCREEN_HEIGHT as f32 / 2.0);
+
+        game.update_with_input(
+            0.0,
+            Direction::Stop,
+            false,
+            false,
+            None,
+            Some(button_center),
+        );
+
+        let events = game.drain_events();
+        assert_eq!(
+            events,
+            vec![GameEvent::ButtonClicked, GameEvent::GameStarted]
+        );
     }
 }

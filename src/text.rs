@@ -159,7 +159,7 @@ impl TextItem {
         visible: bool,
     ) -> Self {
         let value = value.into();
-        let image = rasterize_text(&value, color, size);
+        let image = rasterize_text_image(&value, color, size);
         Self {
             value,
             color,
@@ -180,7 +180,7 @@ impl TextItem {
 
     fn set_text(&mut self, value: impl Into<String>) {
         self.value = value.into();
-        self.image = rasterize_text(&self.value, self.color, self.size);
+        self.image = rasterize_text_image(&self.value, self.color, self.size);
     }
 
     fn update(&mut self, dt: f32) {
@@ -212,7 +212,7 @@ impl TextItem {
     }
 }
 
-fn rasterize_text(text: &str, color: [u8; 4], size: f32) -> Arc<RenderedImage> {
+pub fn rasterize_text_image(text: &str, color: [u8; 4], size: f32) -> Arc<RenderedImage> {
     let font = shared_font();
     let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
     layout.reset(&LayoutSettings::default());

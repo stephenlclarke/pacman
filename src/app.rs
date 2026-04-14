@@ -11,6 +11,7 @@ use crossterm::{
 };
 
 use crate::{
+    audio::AudioManager,
     game::{Game, Stage},
     input::InputController,
     kitty::KittyGraphics,
@@ -36,6 +37,12 @@ pub fn run() -> Result<()> {
     let mut graphics = KittyGraphics::new(terminal_geometry.cols, terminal_geometry.rows);
     let mut input = InputController::default();
     let mut game = Game::new(stage);
+    let mut audio = matches!(stage, Stage::AddSoundMusic | Stage::Level7).then(AudioManager::new);
+    if let Some(audio) = &mut audio {
+        for event in game.drain_events() {
+            audio.handle_event(event);
+        }
+    }
     let mut last_tick = Instant::now();
 
     loop {
@@ -56,7 +63,34 @@ pub fn run() -> Result<()> {
         last_tick = Instant::now();
 
         let pause_requested = input.take_pause_requested();
-        game.update(dt, input.direction(), pause_requested);
+        let start_requested = input.take_start_requested();
+        let mouse_position = input.mouse_cell().and_then(|mouse_cell| {
+            renderer.scene_position_for_terminal_cell(
+                terminal_geometry,
+                mouse_cell.column(),
+                mouse_cell.row(),
+            )
+        });
+        let mouse_click_position = input.take_mouse_click().and_then(|mouse_cell| {
+            renderer.scene_position_for_terminal_cell(
+                terminal_geometry,
+                mouse_cell.column(),
+                mouse_cell.row(),
+            )
+        });
+        game.update_with_input(
+            dt,
+            input.direction(),
+            pause_requested,
+            start_requested,
+            mouse_position,
+            mouse_click_position,
+        );
+        if let Some(audio) = &mut audio {
+            for event in game.drain_events() {
+                audio.handle_event(event);
+            }
+        }
         let frame = game.frame();
         let image = renderer.render(&frame);
         graphics.draw_frame(&mut stdout, &image)?;
@@ -99,6 +133,10 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
         "level-flash" => Ok(Stage::LevelFlash),
         "more-fruit" => Ok(Stage::MoreFruit),
         "more-mazes" | "level6" => Ok(Stage::MoreMazes),
+        "add-title-screen" => Ok(Stage::AddTitleScreen),
+        "add-buttons" => Ok(Stage::AddButtons),
+        "add-sound-music" => Ok(Stage::AddSoundMusic),
+        "level7" => Ok(Stage::Level7),
         "-h" | "--help" => {
             print_help();
             std::process::exit(0);
@@ -110,7 +148,8 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
                  `maze-basics`, `pacman-maze`, `portals`, `pellets`, `eating-pellets`, \
                  `level2`, `spawn-mode`, `level3`, `node-restrictions`, `level4`, or \
                  `animate-ghosts`, `level5`, `pacman-death`, `level-flash`, `more-fruit`, \
-                 `more-mazes`, `level6`, or `--help`."
+                 `more-mazes`, `level6`, `add-title-screen`, `add-buttons`, \
+                 `add-sound-music`, `level7`, or `--help`."
             )
         }
     }
@@ -145,10 +184,15 @@ Modes:
   more-fruit      Render the Level 6 More Fruit stage.
   more-mazes      Render the final Level 6 More Mazes stage.
   level6          Alias for `more-mazes`.
+  add-title-screen Render the Level 7 Add Title Screen stage.
+  add-buttons     Render the Level 7 Add Buttons stage.
+  add-sound-music Render the final Level 7 Add Sound/Music stage.
+  level7          Alias for `add-sound-music`.
 
 Controls:
   Arrow keys / WASD  Move Pacman
   Space              Pause or unpause during gameplay stages
+  Enter              Start from the Level 7 title screen
   Q or Esc           Quit"
     );
 }
@@ -204,5 +248,11 @@ mod tests {
     fn level6_alias_maps_to_more_mazes() {
         let stage = parse_stage(std::iter::once(String::from("level6"))).expect("stage parsing");
         assert_eq!(stage, Stage::MoreMazes);
+    }
+
+    #[test]
+    fn level7_alias_maps_to_final_level7_stage() {
+        let stage = parse_stage(std::iter::once(String::from("level7"))).expect("stage parsing");
+        assert_eq!(stage, Stage::Level7);
     }
 }
