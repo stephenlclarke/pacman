@@ -1,4 +1,6 @@
 use crate::{
+    ghosts::Ghost,
+    modes::GhostMode,
     nodes::NodeGroup,
     pacman::{BasicPacman, Direction, NodeMovementMode, NodePacman},
     pellets::PelletGroup,
@@ -18,6 +20,7 @@ pub enum Stage {
     Portals,
     Pellets,
     EatingPellets,
+    Level3,
 }
 
 #[derive(Clone, Debug)]
@@ -44,6 +47,12 @@ enum Scene {
         pacman: NodePacman,
         pellets: Option<PelletGroup>,
         eat_pellets: bool,
+    },
+    Ghosts {
+        nodes: NodeGroup,
+        pacman: NodePacman,
+        pellets: PelletGroup,
+        ghost: Ghost,
     },
 }
 
@@ -100,7 +109,7 @@ impl Game {
             }
             Stage::Portals => {
                 let mut nodes = NodeGroup::pacman_maze();
-                nodes.set_portal_pair((0, 17), (27, 17));
+                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
                 let pacman =
                     NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
                 Scene::Maze {
@@ -112,7 +121,7 @@ impl Game {
             }
             Stage::Pellets => {
                 let mut nodes = NodeGroup::pacman_maze();
-                nodes.set_portal_pair((0, 17), (27, 17));
+                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
                 let pacman =
                     NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
                 Scene::Maze {
@@ -124,7 +133,7 @@ impl Game {
             }
             Stage::EatingPellets => {
                 let mut nodes = NodeGroup::pacman_maze();
-                nodes.set_portal_pair((0, 17), (27, 17));
+                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
                 let pacman =
                     NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
                 Scene::Maze {
@@ -132,6 +141,28 @@ impl Game {
                     pacman,
                     pellets: Some(PelletGroup::maze1()),
                     eat_pellets: true,
+                }
+            }
+            Stage::Level3 => {
+                let mut nodes = NodeGroup::pacman_maze();
+                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
+                let home = nodes.create_home_nodes(11.5, 14.0);
+                nodes.connect_home_nodes(home, (12.0, 14.0), Direction::Left);
+                nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
+                let pacman =
+                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
+                let mut ghost = Ghost::new(nodes.start_node());
+                ghost.initialize_position(&nodes);
+                let spawn_node = nodes
+                    .get_node_from_tiles(13.5, 17.0)
+                    .expect("level 3 spawn node should exist");
+                ghost.set_spawn_node(spawn_node);
+
+                Scene::Ghosts {
+                    nodes,
+                    pacman,
+                    pellets: PelletGroup::maze1(),
+                    ghost,
                 }
             }
         };
@@ -158,6 +189,28 @@ impl Game {
                     if *eat_pellets {
                         pellets.try_eat(pacman.position(), pacman.collide_radius());
                     }
+                }
+            }
+            Scene::Ghosts {
+                nodes,
+                pacman,
+                pellets,
+                ghost,
+            } => {
+                pacman.update(dt, requested_direction, nodes);
+                ghost.update(dt, nodes, pacman.position());
+                pellets.update(dt);
+
+                if let Some(pellet) = pellets.try_eat(pacman.position(), pacman.collide_radius())
+                    && pellet.kind() == crate::pellets::PelletKind::PowerPellet
+                {
+                    ghost.start_freight();
+                }
+
+                if pacman.collide_check(ghost.position(), ghost.collide_radius())
+                    && ghost.mode() == GhostMode::Freight
+                {
+                    ghost.start_spawn(nodes);
                 }
             }
         }
@@ -188,6 +241,17 @@ impl Game {
                     pellets.append_renderables(&mut frame);
                 }
                 frame.circles.push(pacman.renderable());
+            }
+            Scene::Ghosts {
+                nodes,
+                pacman,
+                pellets,
+                ghost,
+            } => {
+                nodes.append_renderables(&mut frame);
+                pellets.append_renderables(&mut frame);
+                frame.circles.push(pacman.renderable());
+                frame.circles.push(ghost.renderable());
             }
         }
 
@@ -238,5 +302,25 @@ mod tests {
 
         assert_eq!(before, 313);
         assert_eq!(after, 312);
+    }
+
+    #[test]
+    fn level3_stage_renders_ghosts_pellets_and_pacman() {
+        let game = Game::new(Stage::Level3);
+        let frame = game.frame();
+
+        assert_eq!(frame.circles.len(), 322);
+        assert!(!frame.lines.is_empty());
+    }
+
+    #[test]
+    fn level3_stage_updates_without_panicking() {
+        let mut game = Game::new(Stage::Level3);
+
+        game.update(0.1, Direction::Right);
+        game.update(0.1, Direction::Stop);
+
+        let frame = game.frame();
+        assert!(frame.circles.len() >= 315);
     }
 }

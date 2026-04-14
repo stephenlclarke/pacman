@@ -176,6 +176,12 @@ impl NodePacman {
         self.collide_radius
     }
 
+    pub fn collide_check(&self, other_position: Vector2, other_collide_radius: f32) -> bool {
+        let distance = self.position - other_position;
+        let collide_radius = self.collide_radius + other_collide_radius;
+        distance.magnitude_squared() <= collide_radius * collide_radius
+    }
+
     pub fn renderable(&self) -> Circle {
         Circle {
             center: self.position,
@@ -332,13 +338,13 @@ mod tests {
     #[test]
     fn portal_nodes_teleport_to_their_pair_when_reached() {
         let mut nodes = NodeGroup::pacman_maze();
-        nodes.set_portal_pair((0, 17), (27, 17));
+        nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
 
         let left = nodes
-            .get_node_from_tiles(0, 17)
+            .get_node_from_tiles(0.0, 17.0)
             .expect("left portal should exist");
         let right = nodes
-            .get_node_from_tiles(27, 17)
+            .get_node_from_tiles(27.0, 17.0)
             .expect("right portal should exist");
         let mut pacman = NodePacman::new(left, &nodes, NodeMovementMode::Reversible);
         pacman.direction = Direction::Left;

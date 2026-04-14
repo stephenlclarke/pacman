@@ -57,6 +57,10 @@ impl Pellet {
         self.points
     }
 
+    pub fn kind(&self) -> PelletKind {
+        self.kind
+    }
+
     fn update(&mut self, dt: f32) {
         if self.kind != PelletKind::PowerPellet {
             return;

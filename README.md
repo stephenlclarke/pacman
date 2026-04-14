@@ -21,6 +21,7 @@ Implemented scope:
 - Level 2 `pellets` via `cargo run -- pellets`
 - Level 2 `eating-pellets` via `cargo run -- eating-pellets`
 - `cargo run -- level2` as an alias for the final Level 2 state
+- Level 3 final state via `cargo run -- level3` or `cargo run -- spawn-mode`
 
 Run this inside `kitty`, `ghostty`, or another terminal that supports the
 Kitty graphics protocol.
