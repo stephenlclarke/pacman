@@ -91,6 +91,7 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
         "portals" => Ok(Stage::Portals),
         "pellets" => Ok(Stage::Pellets),
         "eating-pellets" | "level2" => Ok(Stage::EatingPellets),
+        "spawn-mode" | "level3" => Ok(Stage::Level3),
         "-h" | "--help" => {
             print_help();
             std::process::exit(0);
@@ -100,7 +101,7 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
                 "unknown mode {other:?}. Use `blank-screen`, `basic-movement`, `nodes`, \
                  `node-movement-1`, `node-movement-2`, `node-movement-3`, `level1`, \
                  `maze-basics`, `pacman-maze`, `portals`, `pellets`, `eating-pellets`, \
-                 `level2`, or `--help`."
+                 `level2`, `spawn-mode`, `level3`, or `--help`."
             )
         }
     }
@@ -124,6 +125,8 @@ Modes:
   pellets         Render the Level 2 Pellets stage.
   eating-pellets  Render the Level 2 Eating Pellets stage.
   level2          Alias for `eating-pellets`.
+  spawn-mode      Render the final Level 3 Spawn Mode stage.
+  level3          Alias for `spawn-mode`.
 
 Controls:
   Arrow keys / WASD  Move Pacman
@@ -158,5 +161,11 @@ mod tests {
     fn level2_alias_maps_to_eating_pellets() {
         let stage = parse_stage(std::iter::once(String::from("level2"))).expect("stage parsing");
         assert_eq!(stage, Stage::EatingPellets);
+    }
+
+    #[test]
+    fn level3_alias_maps_to_spawn_mode() {
+        let stage = parse_stage(std::iter::once(String::from("level3"))).expect("stage parsing");
+        assert_eq!(stage, Stage::Level3);
     }
 }
