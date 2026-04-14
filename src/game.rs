@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     actors::{EntityKind, GhostKind},
+    autopilot::AutoPilot,
     constants::{
         BUTTON_CLICK, BUTTON_COLOR, BUTTON_HOVER, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_HEIGHT,
         TILE_WIDTH, WHITE, YELLOW,
@@ -87,6 +88,7 @@ struct Level6State {
     easter_egg_active: bool,
     easter_egg_sequence_index: usize,
     easter_egg_force_freight: bool,
+    easter_egg_autopilot: AutoPilot,
     easter_egg_blink: BlinkFeedback,
     return_to_title_requested: bool,
 }
@@ -135,7 +137,7 @@ impl Game {
         let q_pressed = input.typed_chars.contains(&'q');
         self.state.update(dt, &input);
 
-        if q_pressed && !self.state.easter_egg_active() {
+        if q_pressed {
             self.quit_requested = true;
         }
     }
@@ -267,6 +269,7 @@ impl Level6State {
             easter_egg_active: false,
             easter_egg_sequence_index: 0,
             easter_egg_force_freight: false,
+            easter_egg_autopilot: AutoPilot::default(),
             easter_egg_blink: BlinkFeedback::default(),
             return_to_title_requested: false,
         }
@@ -279,6 +282,7 @@ impl Level6State {
         pause_requested: bool,
         typed_chars: &[char],
     ) {
+        let mut requested_direction = requested_direction;
         let freight_was_active = self.ghosts.has_freight_mode();
         self.handle_easter_egg_input(typed_chars);
         self.easter_egg_blink.update(dt);
@@ -305,6 +309,15 @@ impl Level6State {
 
         if self.pacman.alive() {
             if !self.pause.paused() {
+                if self.easter_egg_autopilot.active() {
+                    requested_direction = self.easter_egg_autopilot.choose_direction(
+                        &self.nodes,
+                        &self.pacman,
+                        &self.pellets,
+                        &self.ghosts,
+                        self.fruit.as_ref(),
+                    );
+                }
                 self.pacman.update(dt, requested_direction, &self.nodes);
                 self.pacman_sprites
                     .update_for_state(dt, self.pacman.direction(), true);
@@ -347,10 +360,6 @@ impl Level6State {
         std::mem::take(&mut self.events)
     }
 
-    fn easter_egg_active(&self) -> bool {
-        self.easter_egg_active
-    }
-
     fn handle_easter_egg_input(&mut self, typed_chars: &[char]) {
         for &character in typed_chars {
             let is_secret_code_input = self.update_easter_egg_sequence(character);
@@ -360,9 +369,12 @@ impl Level6State {
             }
 
             match character {
-                'q' => self.toggle_secret_freight_mode(),
-                'p' => self.teleport_pacman_to_safest_node(),
-                'y' if !is_secret_code_input => self.reset_ghosts_to_start_positions(),
+                'a' => {
+                    self.easter_egg_autopilot.toggle();
+                }
+                'f' => self.toggle_secret_freight_mode(),
+                't' => self.teleport_pacman_to_safest_node(),
+                'r' if !is_secret_code_input => self.reset_ghosts_to_start_positions(),
                 _ => {}
             }
         }
@@ -387,6 +399,7 @@ impl Level6State {
         self.easter_egg_sequence_index = 0;
         self.easter_egg_blink.start();
         if !self.easter_egg_active {
+            self.easter_egg_autopilot.disable();
             self.disable_secret_freight_mode();
         }
     }
@@ -523,6 +536,7 @@ impl Level6State {
         }
 
         if self.pellets.is_empty() {
+            self.easter_egg_autopilot.disable();
             self.events.push(GameEvent::LevelCompleted);
             self.flash_background = true;
             self.flash_timer = 0.0;
@@ -939,12 +953,6 @@ impl Level7State {
         std::mem::take(&mut self.events)
     }
 
-    fn easter_egg_active(&self) -> bool {
-        self.gameplay
-            .as_ref()
-            .is_some_and(Level6State::easter_egg_active)
-    }
-
     fn append_renderables(&self, frame: &mut FrameData) {
         if let Some(gameplay) = &self.gameplay {
             gameplay.append_renderables(frame);
@@ -1117,8 +1125,35 @@ mod tests {
     }
 
     #[test]
-    fn q_still_quits_when_secret_mode_is_inactive() {
+    fn q_quits_when_secret_mode_is_inactive() {
         let mut game = Game::new();
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['q'],
+                ..UpdateInput::default()
+            },
+        );
+
+        assert!(game.quit_requested());
+    }
+
+    #[test]
+    fn q_quits_even_when_secret_mode_is_active() {
+        let mut game = Game::new();
+        start_game(&mut game);
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['x', 'y', 'z', 'z', 'y'],
+                ..UpdateInput::default()
+            },
+        );
+        let _ = game.drain_events();
 
         game.update_with_input(
             0.0,
@@ -1154,7 +1189,26 @@ mod tests {
     }
 
     #[test]
-    fn secret_q_toggles_freight_mode_without_requesting_quit() {
+    fn secret_a_toggles_autopilot_and_secret_mode_off_disables_it() {
+        let mut state = Level6State::new();
+
+        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+        state.handle_easter_egg_input(&['a']);
+        assert!(state.easter_egg_autopilot.active());
+
+        state.handle_easter_egg_input(&['a']);
+        assert!(!state.easter_egg_autopilot.active());
+
+        state.handle_easter_egg_input(&['a']);
+        assert!(state.easter_egg_autopilot.active());
+
+        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+        assert!(!state.easter_egg_active);
+        assert!(!state.easter_egg_autopilot.active());
+    }
+
+    #[test]
+    fn secret_f_toggles_freight_mode_without_requesting_quit() {
         let mut game = Game::new();
         start_game(&mut game);
 
@@ -1172,7 +1226,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['q'],
+                typed_chars: vec!['f'],
                 ..UpdateInput::default()
             },
         );
@@ -1190,7 +1244,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['q'],
+                typed_chars: vec!['f'],
                 ..UpdateInput::default()
             },
         );
@@ -1212,11 +1266,11 @@ mod tests {
     }
 
     #[test]
-    fn secret_p_teleports_pacman_to_the_safest_node() {
+    fn secret_t_teleports_pacman_to_the_safest_node() {
         let mut state = Level6State::new();
         state.easter_egg_active = true;
 
-        state.handle_easter_egg_input(&['p']);
+        state.handle_easter_egg_input(&['t']);
 
         let expected = state
             .nodes
@@ -1239,7 +1293,7 @@ mod tests {
     }
 
     #[test]
-    fn secret_y_sends_ghosts_back_to_their_start_positions() {
+    fn secret_r_sends_ghosts_back_to_their_start_positions() {
         let mut state = Level6State::new();
         state.easter_egg_active = true;
         let expected_positions: Vec<_> = Level6State::new()
@@ -1248,7 +1302,7 @@ mod tests {
             .map(|ghost| ghost.position())
             .collect();
 
-        state.handle_easter_egg_input(&['y']);
+        state.handle_easter_egg_input(&['r']);
 
         let reset_positions: Vec<_> = state.ghosts.iter().map(|ghost| ghost.position()).collect();
         assert_eq!(reset_positions, expected_positions);

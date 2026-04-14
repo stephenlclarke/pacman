@@ -84,12 +84,28 @@ impl Ghost {
         self.direction
     }
 
+    pub fn current_node(&self) -> NodeId {
+        self.node
+    }
+
+    pub fn target_node(&self) -> NodeId {
+        self.target
+    }
+
+    pub fn speed(&self) -> f32 {
+        self.speed
+    }
+
     pub fn collide_radius(&self) -> f32 {
         self.collide_radius
     }
 
     pub fn mode(&self) -> GhostMode {
         self.mode.current()
+    }
+
+    pub fn freight_remaining(&self) -> Option<f32> {
+        self.mode.freight_remaining()
     }
 
     pub fn visible(&self) -> bool {

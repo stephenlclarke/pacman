@@ -53,6 +53,10 @@ impl Pellet {
         }
     }
 
+    pub fn position(&self) -> Vector2 {
+        self.position
+    }
+
     pub fn points(&self) -> u32 {
         self.points
     }
@@ -106,6 +110,10 @@ impl PelletGroup {
         for pellet in &mut self.pellets {
             pellet.update(dt);
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Pellet> {
+        self.pellets.iter()
     }
 
     pub fn try_eat(&mut self, position: Vector2, collide_radius: f32) -> Option<Pellet> {

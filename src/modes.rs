@@ -129,6 +129,11 @@ impl ModeController {
         self.current = self.main_mode.mode;
         true
     }
+
+    pub fn freight_remaining(&self) -> Option<f32> {
+        (self.current == GhostMode::Freight)
+            .then(|| (self.time.unwrap_or(0.0) - self.timer).max(0.0))
+    }
 }
 
 impl Default for ModeController {

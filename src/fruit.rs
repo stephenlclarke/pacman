@@ -61,6 +61,10 @@ impl Fruit {
         self.destroy
     }
 
+    pub fn remaining_life(&self) -> f32 {
+        (self.lifespan - self.timer).max(0.0)
+    }
+
     pub fn points(&self) -> u32 {
         self.points
     }
