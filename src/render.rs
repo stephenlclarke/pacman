@@ -1,7 +1,7 @@
 use crate::{
     constants::{BLACK, SCREEN_HEIGHT, SCREEN_WIDTH},
-    pacman::Pacman,
     terminal::TerminalGeometry,
+    vector::Vector2,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,6 +17,27 @@ pub struct RenderedImage {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FrameData {
+    pub circles: Vec<Circle>,
+    pub lines: Vec<Line>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Circle {
+    pub center: Vector2,
+    pub radius: f32,
+    pub color: [u8; 4],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Line {
+    pub start: Vector2,
+    pub end: Vector2,
+    pub color: [u8; 4],
+    pub thickness: f32,
 }
 
 pub struct Renderer {
@@ -50,15 +71,29 @@ impl Renderer {
         *self = Self::new(geometry);
     }
 
-    pub fn render(&self, pacman: Option<&Pacman>) -> RenderedImage {
+    pub fn render(&self, frame: &FrameData) -> RenderedImage {
         let mut buffer = PixelBuffer::new(self.image_width as usize, self.image_height as usize);
         buffer.fill(Color::from_rgba(BLACK));
 
-        if let Some(pacman) = pacman {
-            let transform = SceneTransform::new(self.image_width as f32, self.image_height as f32);
+        let transform = SceneTransform::new(self.image_width as f32, self.image_height as f32);
+
+        for line in &frame.lines {
+            let (start_x, start_y) = transform.point(line.start);
+            let (end_x, end_y) = transform.point(line.end);
+            buffer.draw_line(
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                Color::from_rgba(line.color),
+                transform.scale_scalar(line.thickness),
+            );
+        }
+
+        for circle in &frame.circles {
             let (center_x, center_y, radius) =
-                transform.circle(pacman.position().x, pacman.position().y, pacman.radius());
-            buffer.draw_filled_circle(center_x, center_y, radius, Color::from_rgba(pacman.color()));
+                transform.circle(circle.center.x, circle.center.y, circle.radius);
+            buffer.draw_filled_circle(center_x, center_y, radius, Color::from_rgba(circle.color));
         }
 
         RenderedImage {
@@ -95,6 +130,40 @@ impl PixelBuffer {
                 if dx * dx + dy * dy <= radius_squared {
                     self.put_pixel(center_x + dx, center_y + dy, color);
                 }
+            }
+        }
+    }
+
+    fn draw_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color, thickness: i32) {
+        let dx = (x1 - x0).abs();
+        let dy = -(y1 - y0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx + dy;
+        let (mut x, mut y) = (x0, y0);
+
+        loop {
+            self.stamp(x, y, color, thickness);
+            if x == x1 && y == y1 {
+                break;
+            }
+            let doubled = err * 2;
+            if doubled >= dy {
+                err += dy;
+                x += sx;
+            }
+            if doubled <= dx {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
+
+    fn stamp(&mut self, x: i32, y: i32, color: Color, thickness: i32) {
+        let radius = thickness.saturating_sub(1);
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                self.put_pixel(x + dx, y + dy, color);
             }
         }
     }
@@ -143,6 +212,16 @@ impl SceneTransform {
         let scaled_radius = (radius * self.scale).round() as i32;
         (center_x, center_y, scaled_radius.max(1))
     }
+
+    fn point(self, point: Vector2) -> (i32, i32) {
+        let x = (self.offset_x + point.x * self.scale).round() as i32;
+        let y = (self.offset_y + point.y * self.scale).round() as i32;
+        (x, y)
+    }
+
+    fn scale_scalar(self, value: f32) -> i32 {
+        (value * self.scale).round() as i32
+    }
 }
 
 fn raster_size(geometry: TerminalGeometry) -> (u32, u32) {
@@ -181,11 +260,11 @@ fn scale_to_fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u3
 
 #[cfg(test)]
 mod tests {
-    use super::{Renderer, SceneTransform};
+    use super::{Circle, FrameData, Line, Renderer, SceneTransform};
     use crate::{
         constants::{SCREEN_HEIGHT, SCREEN_WIDTH},
-        pacman::Pacman,
         terminal::TerminalGeometry,
+        vector::Vector2,
     };
 
     fn sample_pixel(image: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
@@ -204,15 +283,17 @@ mod tests {
             image_width: SCREEN_WIDTH,
             image_height: SCREEN_HEIGHT,
         };
-        let pacman = Pacman::new();
+        let frame = FrameData {
+            circles: vec![Circle {
+                center: Vector2::new(200.0, 400.0),
+                radius: 10.0,
+                color: [255, 255, 0, 255],
+            }],
+            lines: Vec::new(),
+        };
 
-        let image = renderer.render(Some(&pacman));
-        let pixel = sample_pixel(
-            &image.pixels,
-            image.width,
-            pacman.position().x as u32,
-            pacman.position().y as u32,
-        );
+        let image = renderer.render(&frame);
+        let pixel = sample_pixel(&image.pixels, image.width, 200, 400);
 
         assert_eq!(pixel, [255, 255, 0, 255]);
     }
@@ -238,5 +319,27 @@ mod tests {
         assert_eq!(x, 0);
         assert_eq!(y, 0);
         assert_eq!(radius, 20);
+    }
+
+    #[test]
+    fn line_render_paints_white_pixels() {
+        let renderer = Renderer {
+            image_width: SCREEN_WIDTH,
+            image_height: SCREEN_HEIGHT,
+        };
+        let frame = FrameData {
+            circles: Vec::new(),
+            lines: vec![Line {
+                start: Vector2::new(80.0, 80.0),
+                end: Vector2::new(160.0, 80.0),
+                color: [255, 255, 255, 255],
+                thickness: 4.0,
+            }],
+        };
+
+        let image = renderer.render(&frame);
+        let pixel = sample_pixel(&image.pixels, image.width, 120, 80);
+
+        assert_eq!(pixel, [255, 255, 255, 255]);
     }
 }
