@@ -141,6 +141,10 @@ impl NodeGroup {
         self.nodes.len()
     }
 
+    pub fn node_ids(&self) -> impl Iterator<Item = NodeId> + '_ {
+        0..self.nodes.len()
+    }
+
     pub fn get_node_from_pixels(&self, xpixel: i32, ypixel: i32) -> Option<NodeId> {
         self.lookup.get(&(xpixel, ypixel)).copied()
     }

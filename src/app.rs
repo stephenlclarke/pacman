@@ -12,7 +12,7 @@ use crossterm::{
 
 use crate::{
     audio::AudioManager,
-    game::{Game, Stage},
+    game::{Game, Stage, UpdateInput},
     input::InputController,
     kitty::KittyGraphics,
     render::Renderer,
@@ -64,6 +64,7 @@ pub fn run() -> Result<()> {
 
         let pause_requested = input.take_pause_requested();
         let start_requested = input.take_start_requested();
+        let typed_chars = input.take_typed_chars();
         let mouse_position = input.mouse_cell().and_then(|mouse_cell| {
             renderer.scene_position_for_terminal_cell(
                 terminal_geometry,
@@ -80,12 +81,18 @@ pub fn run() -> Result<()> {
         });
         game.update_with_input(
             dt,
-            input.direction(),
-            pause_requested,
-            start_requested,
-            mouse_position,
-            mouse_click_position,
+            UpdateInput {
+                requested_direction: input.direction(),
+                pause_requested,
+                start_requested,
+                mouse_position,
+                mouse_click_position,
+                typed_chars,
+            },
         );
+        if game.quit_requested() {
+            break;
+        }
         if let Some(audio) = &mut audio {
             for event in game.drain_events() {
                 audio.handle_event(event);

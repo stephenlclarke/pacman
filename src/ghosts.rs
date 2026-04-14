@@ -148,6 +148,18 @@ impl Ghost {
         }
     }
 
+    pub fn sustain_freight(&mut self) {
+        if matches!(self.mode.current(), GhostMode::Scatter | GhostMode::Chase) {
+            self.start_freight();
+        }
+    }
+
+    pub fn end_freight(&mut self) {
+        if self.mode.clear_freight_mode() {
+            self.normal_mode();
+        }
+    }
+
     pub fn start_spawn(&mut self, nodes: &NodeGroup) {
         self.mode.set_spawn_mode();
         if self.mode.current() == GhostMode::Spawn {
@@ -381,6 +393,18 @@ impl GhostGroup {
             ghost.start_freight();
         }
         self.reset_points();
+    }
+
+    pub fn sustain_freight(&mut self) {
+        for ghost in &mut self.ghosts {
+            ghost.sustain_freight();
+        }
+    }
+
+    pub fn end_freight(&mut self) {
+        for ghost in &mut self.ghosts {
+            ghost.end_freight();
+        }
     }
 
     pub fn set_spawn_node(&mut self, node: NodeId) {

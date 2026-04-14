@@ -54,6 +54,7 @@ pub struct InputController {
     pause_requested: bool,
     start_requested: bool,
     mouse_click: Option<MouseCell>,
+    typed_chars: Vec<char>,
 }
 
 impl InputController {
@@ -94,8 +95,19 @@ impl InputController {
         self.mouse_click.take()
     }
 
+    pub fn take_typed_chars(&mut self) -> Vec<char> {
+        std::mem::take(&mut self.typed_chars)
+    }
+
     fn handle_key(&mut self, key_event: KeyEvent) {
         let is_pressed = matches!(key_event.kind, KeyEventKind::Press);
+
+        if is_pressed
+            && let KeyCode::Char(character) = key_event.code
+            && character.is_ascii_alphabetic()
+        {
+            self.typed_chars.push(character.to_ascii_lowercase());
+        }
 
         match key_event.code {
             KeyCode::Up | KeyCode::Char('w') | KeyCode::Char('W') if is_pressed => {
@@ -116,7 +128,7 @@ impl InputController {
             KeyCode::Enter if is_pressed => {
                 self.start_requested = true;
             }
-            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc if is_pressed => {
+            KeyCode::Esc if is_pressed => {
                 self.state.quit = true;
             }
             _ => {}
@@ -227,5 +239,16 @@ mod tests {
 
         assert_eq!(input.mouse_cell(), Some(MouseCell::new(12, 9)));
         assert_eq!(input.take_mouse_click(), Some(MouseCell::new(12, 9)));
+    }
+
+    #[test]
+    fn q_is_exposed_as_a_typed_character_instead_of_an_immediate_quit() {
+        let mut input = InputController::default();
+        let mut key_event = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        key_event.kind = KeyEventKind::Press;
+        input.handle_key(key_event);
+
+        assert_eq!(input.take_typed_chars(), vec!['q']);
+        assert!(!input.quit_requested());
     }
 }
