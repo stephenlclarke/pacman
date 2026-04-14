@@ -1,5 +1,7 @@
 use crate::{
-    constants::{PACMAN_RADIUS, PACMAN_SPEED, PACMAN_START_X, PACMAN_START_Y, YELLOW},
+    constants::{
+        PACMAN_COLLIDE_RADIUS, PACMAN_RADIUS, PACMAN_SPEED, PACMAN_START_X, PACMAN_START_Y, YELLOW,
+    },
     nodes::{NodeGroup, NodeId},
     render::Circle,
     vector::Vector2,
@@ -77,6 +79,7 @@ pub struct NodePacman {
     node: NodeId,
     target: NodeId,
     mode: NodeMovementMode,
+    collide_radius: f32,
 }
 
 impl BasicPacman {
@@ -137,6 +140,7 @@ impl NodePacman {
             node: start_node,
             target: start_node,
             mode,
+            collide_radius: PACMAN_COLLIDE_RADIUS,
         };
         pacman.set_position(nodes);
         pacman
@@ -168,6 +172,10 @@ impl NodePacman {
         self.target
     }
 
+    pub fn collide_radius(&self) -> f32 {
+        self.collide_radius
+    }
+
     pub fn renderable(&self) -> Circle {
         Circle {
             center: self.position,
@@ -187,7 +195,7 @@ impl NodePacman {
         self.position += self.direction.vector() * self.speed * dt;
 
         if self.overshot_target(nodes) {
-            self.node = self.target;
+            self.enter_target_node(nodes);
             self.target = self.get_new_target(requested_direction, nodes);
             if self.target != self.node {
                 self.direction = requested_direction;
@@ -202,7 +210,7 @@ impl NodePacman {
         self.position += self.direction.vector() * self.speed * dt;
 
         if self.overshot_target(nodes) {
-            self.node = self.target;
+            self.enter_target_node(nodes);
             self.target = self.get_new_target(requested_direction, nodes);
             if self.target != self.node {
                 self.direction = requested_direction;
@@ -217,6 +225,13 @@ impl NodePacman {
             && requested_direction == self.direction.opposite()
         {
             self.reverse_direction();
+        }
+    }
+
+    fn enter_target_node(&mut self, nodes: &NodeGroup) {
+        self.node = self.target;
+        if let Some(portal) = nodes.portal(self.node) {
+            self.node = portal;
         }
     }
 
@@ -312,5 +327,27 @@ mod tests {
         assert_eq!(pacman.direction(), Direction::Left);
         assert_eq!(pacman.current_node(), 1);
         assert_eq!(pacman.target(), 0);
+    }
+
+    #[test]
+    fn portal_nodes_teleport_to_their_pair_when_reached() {
+        let mut nodes = NodeGroup::pacman_maze();
+        nodes.set_portal_pair((0, 17), (27, 17));
+
+        let left = nodes
+            .get_node_from_tiles(0, 17)
+            .expect("left portal should exist");
+        let right = nodes
+            .get_node_from_tiles(27, 17)
+            .expect("right portal should exist");
+        let mut pacman = NodePacman::new(left, &nodes, NodeMovementMode::Reversible);
+        pacman.direction = Direction::Left;
+        pacman.target = left;
+
+        pacman.update(0.0, Direction::Stop, &nodes);
+
+        assert_eq!(pacman.current_node(), right);
+        assert_eq!(pacman.position(), nodes.position(right));
+        assert_eq!(pacman.collide_radius(), 5.0);
     }
 }

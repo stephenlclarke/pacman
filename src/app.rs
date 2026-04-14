@@ -86,6 +86,11 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
         "node-movement-1" => Ok(Stage::NodeMovement1),
         "node-movement-2" => Ok(Stage::NodeMovement2),
         "node-movement-3" | "level1" => Ok(Stage::NodeMovement3),
+        "maze-basics" => Ok(Stage::MazeBasics),
+        "pacman-maze" => Ok(Stage::PacmanMaze),
+        "portals" => Ok(Stage::Portals),
+        "pellets" => Ok(Stage::Pellets),
+        "eating-pellets" | "level2" => Ok(Stage::EatingPellets),
         "-h" | "--help" => {
             print_help();
             std::process::exit(0);
@@ -93,7 +98,9 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
         other => {
             bail!(
                 "unknown mode {other:?}. Use `blank-screen`, `basic-movement`, `nodes`, \
-                 `node-movement-1`, `node-movement-2`, `node-movement-3`, `level1`, or `--help`."
+                 `node-movement-1`, `node-movement-2`, `node-movement-3`, `level1`, \
+                 `maze-basics`, `pacman-maze`, `portals`, `pellets`, `eating-pellets`, \
+                 `level2`, or `--help`."
             )
         }
     }
@@ -111,6 +118,12 @@ Modes:
   node-movement-2 Render Level 1 Node Movement part 2.
   node-movement-3 Render Level 1 Node Movement part 3.
   level1          Alias for `node-movement-3`.
+  maze-basics     Render the Level 2 Maze Basics stage.
+  pacman-maze     Render the Level 2 Pacman Maze stage.
+  portals         Render the Level 2 Portals stage.
+  pellets         Render the Level 2 Pellets stage.
+  eating-pellets  Render the Level 2 Eating Pellets stage.
+  level2          Alias for `eating-pellets`.
 
 Controls:
   Arrow keys / WASD  Move Pacman
@@ -139,5 +152,11 @@ mod tests {
     fn level1_alias_maps_to_node_movement_part_three() {
         let stage = parse_stage(std::iter::once(String::from("level1"))).expect("stage parsing");
         assert_eq!(stage, Stage::NodeMovement3);
+    }
+
+    #[test]
+    fn level2_alias_maps_to_eating_pellets() {
+        let stage = parse_stage(std::iter::once(String::from("level2"))).expect("stage parsing");
+        assert_eq!(stage, Stage::EatingPellets);
     }
 }
