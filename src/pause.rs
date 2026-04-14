@@ -20,6 +20,10 @@ impl<T: Copy> PauseController<T> {
         self.paused
     }
 
+    pub fn is_timed(&self) -> bool {
+        self.pause_time.is_some()
+    }
+
     pub fn toggle(&mut self) -> bool {
         self.timer = 0.0;
         self.pause_time = None;
@@ -82,5 +86,15 @@ mod tests {
         assert_eq!(pause.update(0.5), None);
         assert_eq!(pause.update(0.6), Some(Action::Resume));
         assert!(!pause.paused());
+    }
+
+    #[test]
+    fn timed_pause_state_is_visible_to_callers() {
+        let mut pause = PauseController::new(false);
+        assert!(!pause.is_timed());
+
+        pause.start_timed_pause(1.0, Action::Resume);
+
+        assert!(pause.is_timed());
     }
 }

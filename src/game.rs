@@ -297,7 +297,7 @@ impl Level4State {
     const FRUIT_THRESHOLDS: [usize; 2] = [50, 140];
 
     fn new() -> Self {
-        Self::start_level(0, 5)
+        Self::start_level(1, 5)
     }
 
     fn start_level(level: u32, lives: u32) -> Self {
@@ -397,7 +397,7 @@ impl Level4State {
             self.handle_after_pause(action);
         }
 
-        if pause_requested && self.pacman.alive() {
+        if pause_requested && self.pacman.alive() && !self.pause.is_timed() {
             if self.pause.toggle() {
                 self.hide_entities();
             } else {
@@ -515,7 +515,7 @@ impl Level4State {
                 *self = Self::start_level(self.level + 1, self.lives);
             }
             Level4Action::RestartGame => {
-                *self = Self::start_level(0, 5);
+                *self = Self::start_level(1, 5);
             }
         }
     }
@@ -558,8 +558,8 @@ impl Level4State {
 
 #[cfg(test)]
 mod tests {
-    use super::{Game, Stage};
-    use crate::pacman::Direction;
+    use super::{Game, Level4Action, Level4State, Stage};
+    use crate::{pacman::Direction, render::FrameData};
 
     #[test]
     fn nodes_stage_renders_graph_and_pacman() {
@@ -639,5 +639,27 @@ mod tests {
 
         let frame = game.frame();
         assert_eq!(frame.circles.len(), 319);
+    }
+
+    #[test]
+    fn timed_pause_ignores_player_pause_requests() {
+        let mut state = Level4State::new();
+        state
+            .pause
+            .start_timed_pause(1.0, Level4Action::ShowEntities);
+        state.hide_entities();
+
+        state.update(0.0, Direction::Stop, true);
+
+        let mut frame = FrameData::default();
+        state.append_renderables(&mut frame);
+        assert_eq!(frame.circles.len(), 320);
+    }
+
+    #[test]
+    fn level4_starts_on_level_one() {
+        let state = Level4State::new();
+
+        assert_eq!(state.level, 1);
     }
 }
