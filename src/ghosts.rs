@@ -80,6 +80,10 @@ impl Ghost {
         self.position
     }
 
+    pub fn direction(&self) -> Direction {
+        self.direction
+    }
+
     pub fn collide_radius(&self) -> f32 {
         self.collide_radius
     }

@@ -116,10 +116,11 @@ impl PelletGroup {
     }
 
     pub fn append_renderables(&self, frame: &mut FrameData) {
+        let offset = Vector2::new(TILE_WIDTH as f32 * 0.5, TILE_HEIGHT as f32 * 0.5);
         for pellet in &self.pellets {
             if pellet.visible {
                 frame.circles.push(Circle {
-                    center: pellet.position,
+                    center: pellet.position + offset,
                     radius: pellet.radius,
                     color: WHITE,
                 });
@@ -160,7 +161,7 @@ mod tests {
     fn maze_one_has_the_expected_pellet_counts() {
         let pellets = PelletGroup::maze1();
 
-        assert_eq!(pellets.len(), 246);
+        assert_eq!(pellets.len(), 244);
         assert_eq!(pellets.power_pellet_count(), 4);
         assert!(!pellets.is_empty());
     }
@@ -196,7 +197,7 @@ mod tests {
 
         assert_eq!(pellet.position, Vector2::new(16.0, 64.0));
         assert_eq!(pellet.points(), 10);
-        assert_eq!(pellets.len(), 245);
+        assert_eq!(pellets.len(), 243);
         assert_eq!(pellets.num_eaten(), 1);
     }
 }
