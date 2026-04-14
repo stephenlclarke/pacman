@@ -6,7 +6,7 @@ use fontdue::{
 };
 
 use crate::{
-    constants::{TILE_HEIGHT, TILE_WIDTH, WHITE, YELLOW},
+    constants::{RED, TILE_HEIGHT, TILE_WIDTH, WHITE, YELLOW},
     render::{FrameData, RenderedImage, Sprite, SpriteAnchor},
     vector::Vector2,
 };
@@ -75,7 +75,7 @@ impl TextGroup {
             ),
             game_over: TextItem::new(
                 "GAMEOVER!",
-                YELLOW,
+                RED,
                 10.0 * TILE_WIDTH as f32,
                 20.0 * TILE_HEIGHT as f32,
                 size,
@@ -286,7 +286,7 @@ fn shared_font() -> Arc<Font> {
 #[cfg(test)]
 mod tests {
     use super::{StatusText, TextGroup};
-    use crate::render::FrameData;
+    use crate::{constants::RED, render::FrameData};
 
     #[test]
     fn text_group_starts_with_ready_visible() {
@@ -315,5 +315,12 @@ mod tests {
         text.append_renderables(&mut frame);
 
         assert!(!frame.sprites.is_empty());
+    }
+
+    #[test]
+    fn game_over_text_uses_the_tutorial_red_color() {
+        let text = TextGroup::new();
+
+        assert_eq!(text.game_over.color, RED);
     }
 }
