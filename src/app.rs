@@ -12,7 +12,7 @@ use crossterm::{
 
 use crate::{
     audio::AudioManager,
-    game::{Game, Stage, UpdateInput},
+    game::{Game, UpdateInput},
     input::InputController,
     kitty::KittyGraphics,
     render::Renderer,
@@ -23,7 +23,7 @@ const FRAME_TIME: Duration = Duration::from_millis(33);
 const MAX_DT: f32 = 0.1;
 
 pub fn run() -> Result<()> {
-    let stage = parse_stage(std::env::args().skip(1))?;
+    parse_args(std::env::args().skip(1))?;
 
     KittyGraphics::ensure_supported()?;
 
@@ -36,12 +36,10 @@ pub fn run() -> Result<()> {
     let mut renderer = Renderer::new(terminal_geometry);
     let mut graphics = KittyGraphics::new(terminal_geometry.cols, terminal_geometry.rows);
     let mut input = InputController::default();
-    let mut game = Game::new(stage);
-    let mut audio = matches!(stage, Stage::AddSoundMusic | Stage::Level7).then(AudioManager::new);
-    if let Some(audio) = &mut audio {
-        for event in game.drain_events() {
-            audio.handle_event(event);
-        }
+    let mut game = Game::new();
+    let mut audio = AudioManager::new();
+    for event in game.drain_events() {
+        audio.handle_event(event);
     }
     let mut last_tick = Instant::now();
 
@@ -93,19 +91,20 @@ pub fn run() -> Result<()> {
         if game.quit_requested() {
             break;
         }
-        if let Some(audio) = &mut audio {
-            for event in game.drain_events() {
-                audio.handle_event(event);
-            }
+        for event in game.drain_events() {
+            audio.handle_event(event);
         }
         let frame = game.frame();
         let image = renderer.render(&frame);
-        graphics.draw_frame(&mut stdout, &image)?;
+        graphics.draw_frame(&mut stdout, image)?;
         stdout.flush()?;
 
         let elapsed = frame_started.elapsed();
         if elapsed < FRAME_TIME {
-            std::thread::sleep(FRAME_TIME - elapsed);
+            input.poll_for(FRAME_TIME - elapsed)?;
+            if input.quit_requested() {
+                break;
+            }
         }
     }
 
@@ -115,88 +114,37 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
+fn parse_args(args: impl Iterator<Item = String>) -> Result<()> {
     let args: Vec<String> = args.collect();
     if args.is_empty() {
-        return Ok(Stage::Level7);
+        return Ok(());
     }
 
-    match args[0].as_str() {
-        "blank-screen" => Ok(Stage::BlankScreen),
-        "basic-movement" => Ok(Stage::BasicMovement),
-        "nodes" => Ok(Stage::Nodes),
-        "node-movement-1" => Ok(Stage::NodeMovement1),
-        "node-movement-2" => Ok(Stage::NodeMovement2),
-        "node-movement-3" | "level1" => Ok(Stage::NodeMovement3),
-        "maze-basics" => Ok(Stage::MazeBasics),
-        "pacman-maze" => Ok(Stage::PacmanMaze),
-        "portals" => Ok(Stage::Portals),
-        "pellets" => Ok(Stage::Pellets),
-        "eating-pellets" | "level2" => Ok(Stage::EatingPellets),
-        "spawn-mode" | "level3" => Ok(Stage::Level3),
-        "node-restrictions" | "level4" => Ok(Stage::Level4),
-        "animate-ghosts" | "level5" => Ok(Stage::Level5),
-        "pacman-death" => Ok(Stage::PacmanDeath),
-        "level-flash" => Ok(Stage::LevelFlash),
-        "more-fruit" => Ok(Stage::MoreFruit),
-        "more-mazes" | "level6" => Ok(Stage::MoreMazes),
-        "add-title-screen" => Ok(Stage::AddTitleScreen),
-        "add-buttons" => Ok(Stage::AddButtons),
-        "add-sound-music" => Ok(Stage::AddSoundMusic),
-        "level7" => Ok(Stage::Level7),
-        "-h" | "--help" => {
+    match args.as_slice() {
+        [flag] if matches!(flag.as_str(), "-h" | "--help") => {
             print_help();
             std::process::exit(0);
         }
-        other => {
+        [arg] => {
             bail!(
-                "unknown mode {other:?}. Use `blank-screen`, `basic-movement`, `nodes`, \
-                 `node-movement-1`, `node-movement-2`, `node-movement-3`, `level1`, \
-                 `maze-basics`, `pacman-maze`, `portals`, `pellets`, `eating-pellets`, \
-                 `level2`, `spawn-mode`, `level3`, `node-restrictions`, `level4`, or \
-                 `animate-ghosts`, `level5`, `pacman-death`, `level-flash`, `more-fruit`, \
-                 `more-mazes`, `level6`, `add-title-screen`, `add-buttons`, \
-                 `add-sound-music`, `level7`, or `--help`."
+                "unexpected launch mode {arg:?}. This branch only supports the final target. \
+                 Use `cargo run` or `cargo run -- --help`."
             )
         }
+        _ => bail!(
+            "unexpected arguments. This branch only supports the final target. \
+             Use `cargo run` or `cargo run -- --help`."
+        ),
     }
 }
 
 fn print_help() {
     println!(
-        "Usage: cargo run [-- <mode>]
+        "Usage: cargo run [-- --help]
 
-Running `cargo run` with no mode launches the final Level 7 target.
+Running `cargo run` launches the final Level 7 target.
 
-Modes:
-  blank-screen    Render the Start-tab blank screen stage.
-  basic-movement  Render the Start-tab basic movement stage.
-  nodes           Render the Level 1 Nodes stage.
-  node-movement-1 Render Level 1 Node Movement part 1.
-  node-movement-2 Render Level 1 Node Movement part 2.
-  node-movement-3 Render Level 1 Node Movement part 3.
-  level1          Alias for `node-movement-3`.
-  maze-basics     Render the Level 2 Maze Basics stage.
-  pacman-maze     Render the Level 2 Pacman Maze stage.
-  portals         Render the Level 2 Portals stage.
-  pellets         Render the Level 2 Pellets stage.
-  eating-pellets  Render the Level 2 Eating Pellets stage.
-  level2          Alias for `eating-pellets`.
-  spawn-mode      Render the final Level 3 Spawn Mode stage.
-  level3          Alias for `spawn-mode`.
-  node-restrictions Render the final Level 4 Node Restrictions stage.
-  level4          Alias for `node-restrictions`.
-  animate-ghosts  Render the final Level 5 Animate Ghosts stage.
-  level5          Alias for `animate-ghosts`.
-  pacman-death    Render the Level 6 Pacman Death stage.
-  level-flash     Render the Level 6 Level Flash stage.
-  more-fruit      Render the Level 6 More Fruit stage.
-  more-mazes      Render the final Level 6 More Mazes stage.
-  level6          Alias for `more-mazes`.
-  add-title-screen Render the Level 7 Add Title Screen stage.
-  add-buttons     Render the Level 7 Add Buttons stage.
-  add-sound-music Render the final Level 7 Add Sound/Music stage.
-  level7          Alias for `add-sound-music`.
+This branch no longer exposes per-lesson launch modes.
 
 Controls:
   Arrow keys / WASD  Move Pacman
@@ -208,60 +156,34 @@ Controls:
 
 #[cfg(test)]
 mod tests {
-    use super::{Stage, parse_stage};
+    use super::parse_args;
 
     #[test]
-    fn default_stage_is_level7() {
-        let stage = parse_stage(std::iter::empty()).expect("stage parsing should succeed");
-        assert_eq!(stage, Stage::Level7);
+    fn no_arguments_launch_the_default_game() {
+        parse_args(std::iter::empty()).expect("argument parsing should succeed");
     }
 
     #[test]
-    fn blank_screen_stage_parses() {
-        let stage =
-            parse_stage(std::iter::once(String::from("blank-screen"))).expect("stage parsing");
-        assert_eq!(stage, Stage::BlankScreen);
+    fn explicit_launch_modes_are_rejected() {
+        let error =
+            parse_args(std::iter::once(String::from("level7"))).expect_err("parsing should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("This branch only supports the final target"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[test]
-    fn level1_alias_maps_to_node_movement_part_three() {
-        let stage = parse_stage(std::iter::once(String::from("level1"))).expect("stage parsing");
-        assert_eq!(stage, Stage::NodeMovement3);
-    }
-
-    #[test]
-    fn level2_alias_maps_to_eating_pellets() {
-        let stage = parse_stage(std::iter::once(String::from("level2"))).expect("stage parsing");
-        assert_eq!(stage, Stage::EatingPellets);
-    }
-
-    #[test]
-    fn level3_alias_maps_to_spawn_mode() {
-        let stage = parse_stage(std::iter::once(String::from("level3"))).expect("stage parsing");
-        assert_eq!(stage, Stage::Level3);
-    }
-
-    #[test]
-    fn level4_alias_maps_to_node_restrictions() {
-        let stage = parse_stage(std::iter::once(String::from("level4"))).expect("stage parsing");
-        assert_eq!(stage, Stage::Level4);
-    }
-
-    #[test]
-    fn level5_alias_maps_to_animate_ghosts() {
-        let stage = parse_stage(std::iter::once(String::from("level5"))).expect("stage parsing");
-        assert_eq!(stage, Stage::Level5);
-    }
-
-    #[test]
-    fn level6_alias_maps_to_more_mazes() {
-        let stage = parse_stage(std::iter::once(String::from("level6"))).expect("stage parsing");
-        assert_eq!(stage, Stage::MoreMazes);
-    }
-
-    #[test]
-    fn level7_alias_maps_to_final_level7_stage() {
-        let stage = parse_stage(std::iter::once(String::from("level7"))).expect("stage parsing");
-        assert_eq!(stage, Stage::Level7);
+    fn extra_arguments_are_rejected() {
+        let error = parse_args([String::from("level7"), String::from("extra")].into_iter())
+            .expect_err("parsing should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("This branch only supports the final target"),
+            "unexpected error: {error:#}"
+        );
     }
 }

@@ -407,6 +407,12 @@ impl GhostGroup {
         }
     }
 
+    pub fn has_freight_mode(&self) -> bool {
+        self.ghosts
+            .iter()
+            .any(|ghost| ghost.mode() == GhostMode::Freight)
+    }
+
     pub fn set_spawn_node(&mut self, node: NodeId) {
         for ghost in &mut self.ghosts {
             ghost.set_spawn_node(node);

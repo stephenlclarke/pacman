@@ -8,7 +8,7 @@ use crate::{
     vector::Vector2,
 };
 
-const MAZE_TEST: &str = include_str!("../assets/mazetest.txt");
+#[cfg(test)]
 const MAZE_ONE: &str = include_str!("../assets/maze1.txt");
 
 pub type NodeId = usize;
@@ -68,42 +68,7 @@ impl Node {
 }
 
 impl NodeGroup {
-    pub fn setup_test_nodes() -> Self {
-        let nodes = vec![
-            Node::new(80, 80),
-            Node::new(160, 80),
-            Node::new(80, 160),
-            Node::new(160, 160),
-            Node::new(208, 160),
-            Node::new(80, 320),
-            Node::new(208, 320),
-        ];
-        let mut group = Self::with_nodes(nodes);
-
-        link_neighbors(&mut group.nodes, 0, Direction::Right, 1);
-        link_neighbors(&mut group.nodes, 0, Direction::Down, 2);
-        link_neighbors(&mut group.nodes, 1, Direction::Left, 0);
-        link_neighbors(&mut group.nodes, 1, Direction::Down, 3);
-        link_neighbors(&mut group.nodes, 2, Direction::Up, 0);
-        link_neighbors(&mut group.nodes, 2, Direction::Right, 3);
-        link_neighbors(&mut group.nodes, 2, Direction::Down, 5);
-        link_neighbors(&mut group.nodes, 3, Direction::Up, 1);
-        link_neighbors(&mut group.nodes, 3, Direction::Left, 2);
-        link_neighbors(&mut group.nodes, 3, Direction::Right, 4);
-        link_neighbors(&mut group.nodes, 4, Direction::Left, 3);
-        link_neighbors(&mut group.nodes, 4, Direction::Down, 6);
-        link_neighbors(&mut group.nodes, 5, Direction::Up, 2);
-        link_neighbors(&mut group.nodes, 5, Direction::Right, 6);
-        link_neighbors(&mut group.nodes, 6, Direction::Up, 4);
-        link_neighbors(&mut group.nodes, 6, Direction::Left, 5);
-
-        group
-    }
-
-    pub fn maze_basics() -> Self {
-        Self::from_text(MAZE_TEST, &['+'], &['.'])
-    }
-
+    #[cfg(test)]
     pub fn pacman_maze() -> Self {
         Self::from_pacman_layout(MAZE_ONE)
     }
@@ -137,6 +102,7 @@ impl NodeGroup {
         self.nodes[node_id].position
     }
 
+    #[cfg(test)]
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
@@ -145,6 +111,7 @@ impl NodeGroup {
         0..self.nodes.len()
     }
 
+    #[cfg(test)]
     pub fn get_node_from_pixels(&self, xpixel: i32, ypixel: i32) -> Option<NodeId> {
         self.lookup.get(&(xpixel, ypixel)).copied()
     }
@@ -371,20 +338,6 @@ impl NodeGroup {
         }
     }
 
-    fn with_nodes(nodes: Vec<Node>) -> Self {
-        let lookup = nodes
-            .iter()
-            .enumerate()
-            .map(|(id, node)| ((node.position.x as i32, node.position.y as i32), id))
-            .collect();
-
-        Self {
-            nodes,
-            lookup,
-            home_node: None,
-        }
-    }
-
     fn construct_key(col: f32, row: f32) -> (i32, i32) {
         (
             (col * TILE_WIDTH as f32).round() as i32,
@@ -441,34 +394,6 @@ fn link_neighbors(nodes: &mut [Node], node_id: NodeId, direction: Direction, nei
 mod tests {
     use super::NodeGroup;
     use crate::{actors::EntityKind, pacman::Direction};
-
-    #[test]
-    fn test_nodes_match_the_tutorial_graph() {
-        let nodes = NodeGroup::setup_test_nodes();
-
-        assert_eq!(nodes.neighbor(0, Direction::Right), Some(1));
-        assert_eq!(nodes.neighbor(0, Direction::Down), Some(2));
-        assert_eq!(nodes.neighbor(3, Direction::Right), Some(4));
-        assert_eq!(nodes.neighbor(5, Direction::Right), Some(6));
-        assert_eq!(nodes.neighbor(6, Direction::Down), None);
-    }
-
-    #[test]
-    fn start_node_is_the_first_maze_test_node() {
-        let nodes = NodeGroup::setup_test_nodes();
-        assert_eq!(nodes.position(nodes.start_node()).as_tuple(), (80.0, 80.0));
-        assert_eq!(nodes.node_count(), 7);
-    }
-
-    #[test]
-    fn maze_basics_layout_matches_the_downloaded_text_file() {
-        let nodes = NodeGroup::maze_basics();
-
-        assert_eq!(nodes.node_count(), 7);
-        assert_eq!(nodes.position(nodes.start_node()).as_tuple(), (16.0, 16.0));
-        assert_eq!(nodes.neighbor(0, Direction::Right), Some(1));
-        assert_eq!(nodes.neighbor(0, Direction::Down), Some(2));
-    }
 
     #[test]
     fn pacman_maze_matches_the_downloaded_layout() {

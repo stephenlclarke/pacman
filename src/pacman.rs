@@ -1,8 +1,6 @@
 use crate::{
     actors::EntityKind,
-    constants::{
-        PACMAN_COLLIDE_RADIUS, PACMAN_RADIUS, PACMAN_SPEED, PACMAN_START_X, PACMAN_START_Y, YELLOW,
-    },
+    constants::{PACMAN_COLLIDE_RADIUS, PACMAN_RADIUS, PACMAN_SPEED, YELLOW},
     nodes::{NodeGroup, NodeId},
     render::Circle,
     vector::Vector2,
@@ -55,22 +53,6 @@ impl Direction {
 }
 
 #[derive(Clone, Debug)]
-pub struct BasicPacman {
-    position: Vector2,
-    direction: Direction,
-    speed: f32,
-    radius: f32,
-    color: [u8; 4],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NodeMovementMode {
-    Teleport,
-    OvershootStop,
-    Reversible,
-}
-
-#[derive(Clone, Debug)]
 pub struct NodePacman {
     position: Vector2,
     direction: Direction,
@@ -79,7 +61,6 @@ pub struct NodePacman {
     color: [u8; 4],
     node: NodeId,
     target: NodeId,
-    mode: NodeMovementMode,
     collide_radius: f32,
     start_node: NodeId,
     start_direction: Direction,
@@ -88,55 +69,8 @@ pub struct NodePacman {
     alive: bool,
 }
 
-impl BasicPacman {
-    pub fn new() -> Self {
-        Self {
-            position: Vector2::new(PACMAN_START_X, PACMAN_START_Y),
-            direction: Direction::Stop,
-            speed: PACMAN_SPEED,
-            radius: PACMAN_RADIUS,
-            color: YELLOW,
-        }
-    }
-
-    pub fn update(&mut self, dt: f32, next_direction: Direction) {
-        self.position += self.direction.vector() * self.speed * dt;
-        self.direction = next_direction;
-    }
-
-    pub fn position(&self) -> Vector2 {
-        self.position
-    }
-
-    pub fn radius(&self) -> f32 {
-        self.radius
-    }
-
-    pub fn color(&self) -> [u8; 4] {
-        self.color
-    }
-
-    pub fn direction(&self) -> Direction {
-        self.direction
-    }
-
-    pub fn renderable(&self) -> Circle {
-        Circle {
-            center: self.position,
-            radius: self.radius,
-            color: self.color,
-        }
-    }
-}
-
-impl Default for BasicPacman {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl NodePacman {
-    pub fn new(start_node: NodeId, nodes: &NodeGroup, mode: NodeMovementMode) -> Self {
+    pub fn new(start_node: NodeId, nodes: &NodeGroup) -> Self {
         let mut pacman = Self {
             position: nodes.position(start_node),
             direction: Direction::Stop,
@@ -145,7 +79,6 @@ impl NodePacman {
             color: YELLOW,
             node: start_node,
             target: start_node,
-            mode,
             collide_radius: PACMAN_COLLIDE_RADIUS,
             start_node,
             start_direction: Direction::Stop,
@@ -211,13 +144,7 @@ impl NodePacman {
             return;
         }
 
-        match self.mode {
-            NodeMovementMode::Teleport => self.update_teleport(requested_direction, nodes),
-            NodeMovementMode::OvershootStop => {
-                self.update_overshoot(dt, requested_direction, nodes)
-            }
-            NodeMovementMode::Reversible => self.update_reversible(dt, requested_direction, nodes),
-        }
+        self.update_reversible(dt, requested_direction, nodes);
     }
 
     pub fn position(&self) -> Vector2 {
@@ -259,28 +186,6 @@ impl NodePacman {
         self.target = node;
         self.direction = Direction::Stop;
         self.set_position(nodes);
-    }
-
-    fn update_teleport(&mut self, requested_direction: Direction, nodes: &NodeGroup) {
-        self.direction = requested_direction;
-        self.node = self.get_new_target(requested_direction, nodes);
-        self.target = self.node;
-        self.set_position(nodes);
-    }
-
-    fn update_overshoot(&mut self, dt: f32, requested_direction: Direction, nodes: &NodeGroup) {
-        self.position += self.direction.vector() * self.speed * dt;
-
-        if self.overshot_target(nodes) {
-            self.enter_target_node(nodes);
-            self.target = self.get_new_target(requested_direction, nodes);
-            if self.target != self.node {
-                self.direction = requested_direction;
-            } else {
-                self.direction = Direction::Stop;
-            }
-            self.set_position(nodes);
-        }
     }
 
     fn update_reversible(&mut self, dt: f32, requested_direction: Direction, nodes: &NodeGroup) {
@@ -351,80 +256,8 @@ impl NodePacman {
 
 #[cfg(test)]
 mod tests {
-    use super::{BasicPacman, Direction, NodeMovementMode, NodePacman};
+    use super::{Direction, NodePacman};
     use crate::{actors::EntityKind, nodes::NodeGroup, vector::Vector2};
-
-    #[test]
-    fn pacman_starts_with_tutorial_defaults() {
-        let pacman = BasicPacman::new();
-
-        assert_eq!(pacman.position(), Vector2::new(200.0, 400.0));
-        assert_eq!(pacman.radius(), 10.0);
-        assert_eq!(pacman.color(), [255, 255, 0, 255]);
-        assert_eq!(pacman.direction(), Direction::Stop);
-    }
-
-    #[test]
-    fn pacman_moves_using_the_previous_frame_direction() {
-        let mut pacman = BasicPacman::new();
-
-        pacman.update(0.25, Direction::Right);
-        assert_eq!(pacman.position(), Vector2::new(200.0, 400.0));
-
-        pacman.update(0.25, Direction::Right);
-        assert_eq!(pacman.position(), Vector2::new(225.0, 400.0));
-    }
-
-    #[test]
-    fn teleport_mode_snaps_between_connected_nodes() {
-        let nodes = NodeGroup::setup_test_nodes();
-        let mut pacman = NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Teleport);
-
-        pacman.update(0.0, Direction::Right, &nodes);
-
-        assert_eq!(pacman.current_node(), 1);
-        assert_eq!(pacman.target(), 1);
-        assert_eq!(pacman.position(), nodes.position(1));
-    }
-
-    #[test]
-    fn overshoot_mode_advances_when_the_target_is_reached() {
-        let nodes = NodeGroup::setup_test_nodes();
-        let mut pacman =
-            NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::OvershootStop);
-
-        pacman.update(0.0, Direction::Right, &nodes);
-        assert_eq!(pacman.direction(), Direction::Right);
-
-        pacman.update(1.0, Direction::Right, &nodes);
-
-        assert_eq!(pacman.current_node(), 1);
-        assert_eq!(pacman.target(), 1);
-
-        pacman.update(1.0, Direction::Down, &nodes);
-        assert_eq!(pacman.current_node(), 1);
-        assert_eq!(pacman.target(), 3);
-        assert_eq!(pacman.position(), nodes.position(1));
-    }
-
-    #[test]
-    fn reversible_mode_swaps_node_and_target_mid_segment() {
-        let nodes = NodeGroup::setup_test_nodes();
-        let mut pacman = NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-
-        pacman.update(0.0, Direction::Right, &nodes);
-        pacman.update(1.0, Direction::Right, &nodes);
-
-        assert_eq!(pacman.current_node(), 1);
-        assert_eq!(pacman.target(), 1);
-        assert_eq!(pacman.direction(), Direction::Stop);
-
-        pacman.update(0.1, Direction::Left, &nodes);
-
-        assert_eq!(pacman.current_node(), 1);
-        assert_eq!(pacman.target(), 0);
-        assert_eq!(pacman.direction(), Direction::Left);
-    }
 
     #[test]
     fn portal_nodes_teleport_to_their_pair_when_reached() {
@@ -433,7 +266,7 @@ mod tests {
         let left_portal = nodes
             .get_node_from_tiles(6.0, 17.0)
             .expect("left-side entry node should exist");
-        let mut pacman = NodePacman::new(left_portal, &nodes, NodeMovementMode::Reversible);
+        let mut pacman = NodePacman::new(left_portal, &nodes);
 
         pacman.update(0.0, Direction::Left, &nodes);
         pacman.update(1.0, Direction::Left, &nodes);
@@ -450,7 +283,7 @@ mod tests {
         let start_node = nodes
             .get_node_from_tiles(15.0, 26.0)
             .expect("level 4 pacman start node should exist");
-        let mut pacman = NodePacman::new(start_node, &nodes, NodeMovementMode::Reversible);
+        let mut pacman = NodePacman::new(start_node, &nodes);
         pacman.configure_start(start_node, Direction::Left, Some(Direction::Left), &nodes);
 
         assert_eq!(pacman.direction(), Direction::Left);
@@ -470,7 +303,7 @@ mod tests {
             .neighbor(intersection, Direction::Up)
             .expect("queued up turn should be available");
 
-        let mut pacman = NodePacman::new(start_node, &nodes, NodeMovementMode::Reversible);
+        let mut pacman = NodePacman::new(start_node, &nodes);
         pacman.configure_start(start_node, Direction::Left, Some(Direction::Left), &nodes);
         pacman.update(0.25, Direction::Up, &nodes);
 
@@ -493,7 +326,7 @@ mod tests {
             .neighbor(intersection, Direction::Left)
             .expect("continuing left should be available");
 
-        let mut pacman = NodePacman::new(start_node, &nodes, NodeMovementMode::Reversible);
+        let mut pacman = NodePacman::new(start_node, &nodes);
         pacman.configure_start(start_node, Direction::Left, Some(Direction::Left), &nodes);
         pacman.update(0.25, Direction::Left, &nodes);
 
@@ -511,7 +344,7 @@ mod tests {
         nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
         nodes.deny_home_access(EntityKind::Pacman);
 
-        let mut pacman = NodePacman::new(home, &nodes, NodeMovementMode::Reversible);
+        let mut pacman = NodePacman::new(home, &nodes);
         pacman.update(0.0, Direction::Down, &nodes);
 
         assert_eq!(pacman.target(), home);
