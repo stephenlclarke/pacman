@@ -1,4 +1,5 @@
 pub mod actors;
+pub mod animation;
 pub mod app;
 pub mod constants;
 pub mod fruit;
@@ -12,6 +13,8 @@ pub mod pacman;
 pub mod pause;
 pub mod pellets;
 pub mod render;
+pub mod sprites;
 pub mod stack;
 pub mod terminal;
+pub mod text;
 pub mod vector;

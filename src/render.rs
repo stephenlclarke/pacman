@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     constants::{BLACK, SCREEN_HEIGHT, SCREEN_WIDTH},
     terminal::TerminalGeometry,
@@ -13,6 +15,7 @@ impl Color {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct RenderedImage {
     pub width: u32,
     pub height: u32,
@@ -21,8 +24,10 @@ pub struct RenderedImage {
 
 #[derive(Clone, Debug, Default)]
 pub struct FrameData {
+    pub background: Option<Arc<RenderedImage>>,
     pub circles: Vec<Circle>,
     pub lines: Vec<Line>,
+    pub sprites: Vec<Sprite>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,6 +48,19 @@ pub struct Line {
 pub struct Renderer {
     image_width: u32,
     image_height: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpriteAnchor {
+    Center,
+    TopLeft,
+}
+
+#[derive(Clone, Debug)]
+pub struct Sprite {
+    pub image: Arc<RenderedImage>,
+    pub position: Vector2,
+    pub anchor: SpriteAnchor,
 }
 
 struct PixelBuffer {
@@ -77,6 +95,16 @@ impl Renderer {
 
         let transform = SceneTransform::new(self.image_width as f32, self.image_height as f32);
 
+        if let Some(background) = &frame.background {
+            let (x, y, width, height) = transform.rect(
+                Vector2::default(),
+                background.width as f32,
+                background.height as f32,
+                SpriteAnchor::TopLeft,
+            );
+            buffer.draw_image(background, x, y, width, height);
+        }
+
         for line in &frame.lines {
             let (start_x, start_y) = transform.point(line.start);
             let (end_x, end_y) = transform.point(line.end);
@@ -94,6 +122,16 @@ impl Renderer {
             let (center_x, center_y, radius) =
                 transform.circle(circle.center.x, circle.center.y, circle.radius);
             buffer.draw_filled_circle(center_x, center_y, radius, Color::from_rgba(circle.color));
+        }
+
+        for sprite in &frame.sprites {
+            let (x, y, width, height) = transform.rect(
+                sprite.position,
+                sprite.image.width as f32,
+                sprite.image.height as f32,
+                sprite.anchor,
+            );
+            buffer.draw_image(&sprite.image, x, y, width, height);
         }
 
         RenderedImage {
@@ -189,6 +227,66 @@ impl PixelBuffer {
         self.pixels[index + 2] = color.2;
         self.pixels[index + 3] = color.3;
     }
+
+    fn draw_image(
+        &mut self,
+        image: &RenderedImage,
+        dest_x: i32,
+        dest_y: i32,
+        dest_width: i32,
+        dest_height: i32,
+    ) {
+        if dest_width <= 0 || dest_height <= 0 || image.width == 0 || image.height == 0 {
+            return;
+        }
+
+        for dy in 0..dest_height {
+            let src_y = (dy as u32 * image.height / dest_height as u32) as usize;
+            for dx in 0..dest_width {
+                let src_x = (dx as u32 * image.width / dest_width as u32) as usize;
+                let src_index = (src_y * image.width as usize + src_x) * 4;
+                let src = Color(
+                    image.pixels[src_index],
+                    image.pixels[src_index + 1],
+                    image.pixels[src_index + 2],
+                    image.pixels[src_index + 3],
+                );
+                if src.3 == 0 {
+                    continue;
+                }
+
+                self.blend_pixel(dest_x + dx, dest_y + dy, src);
+            }
+        }
+    }
+
+    fn blend_pixel(&mut self, x: i32, y: i32, source: Color) {
+        if x < 0 || y < 0 {
+            return;
+        }
+
+        let x = usize::try_from(x).ok();
+        let y = usize::try_from(y).ok();
+        let (Some(x), Some(y)) = (x, y) else {
+            return;
+        };
+
+        if x >= self.width || y >= self.height {
+            return;
+        }
+
+        let index = (y * self.width + x) * 4;
+        let alpha = source.3 as f32 / 255.0;
+        let inverse = 1.0 - alpha;
+
+        self.pixels[index] =
+            (source.0 as f32 * alpha + self.pixels[index] as f32 * inverse).round() as u8;
+        self.pixels[index + 1] =
+            (source.1 as f32 * alpha + self.pixels[index + 1] as f32 * inverse).round() as u8;
+        self.pixels[index + 2] =
+            (source.2 as f32 * alpha + self.pixels[index + 2] as f32 * inverse).round() as u8;
+        self.pixels[index + 3] = 255;
+    }
 }
 
 impl SceneTransform {
@@ -217,6 +315,25 @@ impl SceneTransform {
         let x = (self.offset_x + point.x * self.scale).round() as i32;
         let y = (self.offset_y + point.y * self.scale).round() as i32;
         (x, y)
+    }
+
+    fn rect(
+        self,
+        position: Vector2,
+        width: f32,
+        height: f32,
+        anchor: SpriteAnchor,
+    ) -> (i32, i32, i32, i32) {
+        let (mut x, mut y) = self.point(position);
+        let scaled_width = (width * self.scale).round() as i32;
+        let scaled_height = (height * self.scale).round() as i32;
+
+        if anchor == SpriteAnchor::Center {
+            x -= scaled_width / 2;
+            y -= scaled_height / 2;
+        }
+
+        (x, y, scaled_width.max(1), scaled_height.max(1))
     }
 
     fn scale_scalar(self, value: f32) -> i32 {
@@ -284,12 +401,14 @@ mod tests {
             image_height: SCREEN_HEIGHT,
         };
         let frame = FrameData {
+            background: None,
             circles: vec![Circle {
                 center: Vector2::new(200.0, 400.0),
                 radius: 10.0,
                 color: [255, 255, 0, 255],
             }],
             lines: Vec::new(),
+            sprites: Vec::new(),
         };
 
         let image = renderer.render(&frame);
@@ -328,6 +447,7 @@ mod tests {
             image_height: SCREEN_HEIGHT,
         };
         let frame = FrameData {
+            background: None,
             circles: Vec::new(),
             lines: vec![Line {
                 start: Vector2::new(80.0, 80.0),
@@ -335,6 +455,7 @@ mod tests {
                 color: [255, 255, 255, 255],
                 thickness: 4.0,
             }],
+            sprites: Vec::new(),
         };
 
         let image = renderer.render(&frame);
