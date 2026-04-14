@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
+    actors::EntityKind,
     constants::{RED, TILE_HEIGHT, TILE_WIDTH, WHITE},
     pacman::Direction,
     render::{Circle, FrameData, Line},
@@ -17,12 +18,14 @@ pub struct Node {
     position: Vector2,
     neighbors: [Option<NodeId>; 4],
     portal: Option<NodeId>,
+    access: [HashSet<EntityKind>; 4],
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct NodeGroup {
     nodes: Vec<Node>,
     lookup: HashMap<(i32, i32), NodeId>,
+    home_node: Option<NodeId>,
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +40,30 @@ impl Node {
             position: Vector2::new(x as f32, y as f32),
             neighbors: [None; 4],
             portal: None,
+            access: std::array::from_fn(|_| EntityKind::all().into_iter().collect()),
         }
+    }
+
+    fn deny_access(&mut self, direction: Direction, entity: EntityKind) {
+        let Some(index) = direction.neighbor_index() else {
+            return;
+        };
+        self.access[index].remove(&entity);
+    }
+
+    fn allow_access(&mut self, direction: Direction, entity: EntityKind) {
+        let Some(index) = direction.neighbor_index() else {
+            return;
+        };
+        self.access[index].insert(entity);
+    }
+
+    fn can_access(&self, direction: Direction, entity: EntityKind) -> bool {
+        let Some(index) = direction.neighbor_index() else {
+            return false;
+        };
+
+        self.neighbors[index].is_some() && self.access[index].contains(&entity)
     }
 }
 
@@ -93,6 +119,12 @@ impl NodeGroup {
             .and_then(|node| node.neighbors[index])
     }
 
+    pub fn can_travel(&self, node_id: NodeId, direction: Direction, entity: EntityKind) -> bool {
+        self.nodes
+            .get(node_id)
+            .is_some_and(|node| node.can_access(direction, entity))
+    }
+
     pub fn portal(&self, node_id: NodeId) -> Option<NodeId> {
         self.nodes.get(node_id).and_then(|node| node.portal)
     }
@@ -139,8 +171,11 @@ impl NodeGroup {
         self.connect_horizontally(&home, &['+'], &['.'], xoffset, yoffset);
         self.connect_vertically(&home, &['+'], &['.'], xoffset, yoffset);
 
-        self.get_node_from_tiles(xoffset + 2.0, yoffset)
-            .expect("home node should exist after creation")
+        let home_node = self
+            .get_node_from_tiles(xoffset + 2.0, yoffset)
+            .expect("home node should exist after creation");
+        self.home_node = Some(home_node);
+        home_node
     }
 
     pub fn connect_home_nodes(
@@ -155,6 +190,59 @@ impl NodeGroup {
 
         link_neighbors(&mut self.nodes, home_node, direction, other);
         link_neighbors(&mut self.nodes, other, direction.opposite(), home_node);
+    }
+
+    pub fn deny_access(&mut self, col: f32, row: f32, direction: Direction, entity: EntityKind) {
+        let Some(node) = self.get_node_from_tiles(col, row) else {
+            return;
+        };
+        self.nodes[node].deny_access(direction, entity);
+    }
+
+    pub fn allow_access(&mut self, col: f32, row: f32, direction: Direction, entity: EntityKind) {
+        let Some(node) = self.get_node_from_tiles(col, row) else {
+            return;
+        };
+        self.nodes[node].allow_access(direction, entity);
+    }
+
+    pub fn deny_access_list<I>(&mut self, col: f32, row: f32, direction: Direction, entities: I)
+    where
+        I: IntoIterator<Item = EntityKind>,
+    {
+        for entity in entities {
+            self.deny_access(col, row, direction, entity);
+        }
+    }
+
+    pub fn allow_access_list<I>(&mut self, col: f32, row: f32, direction: Direction, entities: I)
+    where
+        I: IntoIterator<Item = EntityKind>,
+    {
+        for entity in entities {
+            self.allow_access(col, row, direction, entity);
+        }
+    }
+
+    pub fn deny_home_access(&mut self, entity: EntityKind) {
+        if let Some(home_node) = self.home_node {
+            self.nodes[home_node].deny_access(Direction::Down, entity);
+        }
+    }
+
+    pub fn allow_home_access(&mut self, entity: EntityKind) {
+        if let Some(home_node) = self.home_node {
+            self.nodes[home_node].allow_access(Direction::Down, entity);
+        }
+    }
+
+    pub fn deny_home_access_list<I>(&mut self, entities: I)
+    where
+        I: IntoIterator<Item = EntityKind>,
+    {
+        for entity in entities {
+            self.deny_home_access(entity);
+        }
     }
 
     pub fn append_renderables(&self, frame: &mut FrameData) {
@@ -282,7 +370,11 @@ impl NodeGroup {
             .map(|(id, node)| ((node.position.x as i32, node.position.y as i32), id))
             .collect();
 
-        Self { nodes, lookup }
+        Self {
+            nodes,
+            lookup,
+            home_node: None,
+        }
     }
 
     fn construct_key(col: f32, row: f32) -> (i32, i32) {
@@ -340,7 +432,7 @@ fn link_neighbors(nodes: &mut [Node], node_id: NodeId, direction: Direction, nei
 #[cfg(test)]
 mod tests {
     use super::NodeGroup;
-    use crate::pacman::Direction;
+    use crate::{actors::EntityKind, pacman::Direction};
 
     #[test]
     fn test_nodes_match_the_tutorial_graph() {
@@ -414,5 +506,17 @@ mod tests {
             nodes.neighbor(home, Direction::Right),
             nodes.get_node_from_tiles(15.0, 14.0)
         );
+    }
+
+    #[test]
+    fn denied_access_blocks_travel_for_the_requested_entity_only() {
+        let mut nodes = NodeGroup::pacman_maze();
+        let home = nodes.create_home_nodes(11.5, 14.0);
+        nodes.connect_home_nodes(home, (12.0, 14.0), Direction::Left);
+        nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
+        nodes.deny_home_access(EntityKind::Pacman);
+
+        assert!(!nodes.can_travel(home, Direction::Down, EntityKind::Pacman));
+        assert!(nodes.can_travel(home, Direction::Down, EntityKind::Blinky));
     }
 }

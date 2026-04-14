@@ -55,7 +55,8 @@ pub fn run() -> Result<()> {
         let dt = last_tick.elapsed().as_secs_f32().min(MAX_DT);
         last_tick = Instant::now();
 
-        game.update(dt, input.direction());
+        let pause_requested = input.take_pause_requested();
+        game.update(dt, input.direction(), pause_requested);
         let frame = game.frame();
         let image = renderer.render(&frame);
         graphics.draw_frame(&mut stdout, &image)?;
@@ -92,6 +93,7 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
         "pellets" => Ok(Stage::Pellets),
         "eating-pellets" | "level2" => Ok(Stage::EatingPellets),
         "spawn-mode" | "level3" => Ok(Stage::Level3),
+        "node-restrictions" | "level4" => Ok(Stage::Level4),
         "-h" | "--help" => {
             print_help();
             std::process::exit(0);
@@ -101,7 +103,8 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
                 "unknown mode {other:?}. Use `blank-screen`, `basic-movement`, `nodes`, \
                  `node-movement-1`, `node-movement-2`, `node-movement-3`, `level1`, \
                  `maze-basics`, `pacman-maze`, `portals`, `pellets`, `eating-pellets`, \
-                 `level2`, `spawn-mode`, `level3`, or `--help`."
+                 `level2`, `spawn-mode`, `level3`, `node-restrictions`, `level4`, or \
+                 `--help`."
             )
         }
     }
@@ -127,9 +130,12 @@ Modes:
   level2          Alias for `eating-pellets`.
   spawn-mode      Render the final Level 3 Spawn Mode stage.
   level3          Alias for `spawn-mode`.
+  node-restrictions Render the final Level 4 Node Restrictions stage.
+  level4          Alias for `node-restrictions`.
 
 Controls:
   Arrow keys / WASD  Move Pacman
+  Space              Pause or unpause during Level 4
   Q or Esc           Quit"
     );
 }
@@ -167,5 +173,11 @@ mod tests {
     fn level3_alias_maps_to_spawn_mode() {
         let stage = parse_stage(std::iter::once(String::from("level3"))).expect("stage parsing");
         assert_eq!(stage, Stage::Level3);
+    }
+
+    #[test]
+    fn level4_alias_maps_to_node_restrictions() {
+        let stage = parse_stage(std::iter::once(String::from("level4"))).expect("stage parsing");
+        assert_eq!(stage, Stage::Level4);
     }
 }

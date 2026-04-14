@@ -1,4 +1,5 @@
 use crate::{
+    actors::EntityKind,
     constants::{
         PACMAN_COLLIDE_RADIUS, PACMAN_RADIUS, PACMAN_SPEED, PACMAN_START_X, PACMAN_START_Y, YELLOW,
     },
@@ -80,6 +81,11 @@ pub struct NodePacman {
     target: NodeId,
     mode: NodeMovementMode,
     collide_radius: f32,
+    start_node: NodeId,
+    start_direction: Direction,
+    start_between: Option<Direction>,
+    visible: bool,
+    alive: bool,
 }
 
 impl BasicPacman {
@@ -141,12 +147,70 @@ impl NodePacman {
             target: start_node,
             mode,
             collide_radius: PACMAN_COLLIDE_RADIUS,
+            start_node,
+            start_direction: Direction::Stop,
+            start_between: None,
+            visible: true,
+            alive: true,
         };
         pacman.set_position(nodes);
         pacman
     }
 
+    pub fn configure_start(
+        &mut self,
+        start_node: NodeId,
+        direction: Direction,
+        between: Option<Direction>,
+        nodes: &NodeGroup,
+    ) {
+        self.start_node = start_node;
+        self.start_direction = direction;
+        self.start_between = between;
+        self.reset(nodes);
+    }
+
+    pub fn reset(&mut self, nodes: &NodeGroup) {
+        self.node = self.start_node;
+        self.target = self.start_node;
+        self.direction = self.start_direction;
+        self.speed = PACMAN_SPEED;
+        self.visible = true;
+        self.alive = true;
+        self.set_position(nodes);
+
+        if let Some(direction) = self.start_between {
+            self.set_between_nodes(direction, nodes);
+            self.direction = direction;
+        }
+    }
+
+    pub fn die(&mut self) {
+        self.alive = false;
+        self.direction = Direction::Stop;
+    }
+
+    pub fn hide(&mut self) {
+        self.visible = false;
+    }
+
+    pub fn show(&mut self) {
+        self.visible = true;
+    }
+
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+
+    pub fn alive(&self) -> bool {
+        self.alive
+    }
+
     pub fn update(&mut self, dt: f32, requested_direction: Direction, nodes: &NodeGroup) {
+        if !self.alive {
+            return;
+        }
+
         match self.mode {
             NodeMovementMode::Teleport => self.update_teleport(requested_direction, nodes),
             NodeMovementMode::OvershootStop => {
@@ -241,12 +305,21 @@ impl NodePacman {
         }
     }
 
+    fn set_between_nodes(&mut self, direction: Direction, nodes: &NodeGroup) {
+        self.target = self.get_new_target(direction, nodes);
+        if self.target != self.node {
+            self.position = (nodes.position(self.node) + nodes.position(self.target)) * 0.5;
+        } else {
+            self.set_position(nodes);
+        }
+    }
+
     fn set_position(&mut self, nodes: &NodeGroup) {
         self.position = nodes.position(self.node);
     }
 
     fn valid_direction(&self, direction: Direction, nodes: &NodeGroup) -> bool {
-        direction != Direction::Stop && nodes.neighbor(self.node, direction).is_some()
+        direction != Direction::Stop && nodes.can_travel(self.node, direction, EntityKind::Pacman)
     }
 
     fn get_new_target(&self, direction: Direction, nodes: &NodeGroup) -> NodeId {
@@ -272,27 +345,27 @@ impl NodePacman {
 #[cfg(test)]
 mod tests {
     use super::{BasicPacman, Direction, NodeMovementMode, NodePacman};
-    use crate::{nodes::NodeGroup, vector::Vector2};
+    use crate::{actors::EntityKind, nodes::NodeGroup, vector::Vector2};
 
     #[test]
     fn pacman_starts_with_tutorial_defaults() {
         let pacman = BasicPacman::new();
 
         assert_eq!(pacman.position(), Vector2::new(200.0, 400.0));
-        assert_eq!(pacman.direction(), Direction::Stop);
         assert_eq!(pacman.radius(), 10.0);
         assert_eq!(pacman.color(), [255, 255, 0, 255]);
+        assert_eq!(pacman.direction(), Direction::Stop);
     }
 
     #[test]
     fn pacman_moves_using_the_previous_frame_direction() {
         let mut pacman = BasicPacman::new();
 
-        pacman.update(0.5, Direction::Right);
+        pacman.update(0.25, Direction::Right);
         assert_eq!(pacman.position(), Vector2::new(200.0, 400.0));
 
-        pacman.update(0.5, Direction::Right);
-        assert_eq!(pacman.position(), Vector2::new(250.0, 400.0));
+        pacman.update(0.25, Direction::Right);
+        assert_eq!(pacman.position(), Vector2::new(225.0, 400.0));
     }
 
     #[test]
@@ -303,7 +376,8 @@ mod tests {
         pacman.update(0.0, Direction::Right, &nodes);
 
         assert_eq!(pacman.current_node(), 1);
-        assert_eq!(pacman.position(), Vector2::new(160.0, 80.0));
+        assert_eq!(pacman.target(), 1);
+        assert_eq!(pacman.position(), nodes.position(1));
     }
 
     #[test]
@@ -313,12 +387,17 @@ mod tests {
             NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::OvershootStop);
 
         pacman.update(0.0, Direction::Right, &nodes);
-        pacman.update(0.8, Direction::Right, &nodes);
+        assert_eq!(pacman.direction(), Direction::Right);
+
+        pacman.update(1.0, Direction::Right, &nodes);
 
         assert_eq!(pacman.current_node(), 1);
         assert_eq!(pacman.target(), 1);
-        assert_eq!(pacman.direction(), Direction::Stop);
-        assert_eq!(pacman.position(), Vector2::new(160.0, 80.0));
+
+        pacman.update(1.0, Direction::Down, &nodes);
+        assert_eq!(pacman.current_node(), 1);
+        assert_eq!(pacman.target(), 3);
+        assert_eq!(pacman.position(), nodes.position(1));
     }
 
     #[test]
@@ -327,33 +406,62 @@ mod tests {
         let mut pacman = NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
 
         pacman.update(0.0, Direction::Right, &nodes);
-        pacman.update(0.2, Direction::Right, &nodes);
-        pacman.update(0.0, Direction::Left, &nodes);
+        pacman.update(1.0, Direction::Right, &nodes);
 
-        assert_eq!(pacman.direction(), Direction::Left);
+        assert_eq!(pacman.current_node(), 1);
+        assert_eq!(pacman.target(), 1);
+        assert_eq!(pacman.direction(), Direction::Stop);
+
+        pacman.update(0.1, Direction::Left, &nodes);
+
         assert_eq!(pacman.current_node(), 1);
         assert_eq!(pacman.target(), 0);
+        assert_eq!(pacman.direction(), Direction::Left);
     }
 
     #[test]
     fn portal_nodes_teleport_to_their_pair_when_reached() {
         let mut nodes = NodeGroup::pacman_maze();
         nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
+        let left_portal = nodes
+            .get_node_from_tiles(6.0, 17.0)
+            .expect("left-side entry node should exist");
+        let mut pacman = NodePacman::new(left_portal, &nodes, NodeMovementMode::Reversible);
 
-        let left = nodes
-            .get_node_from_tiles(0.0, 17.0)
-            .expect("left portal should exist");
-        let right = nodes
+        pacman.update(0.0, Direction::Left, &nodes);
+        pacman.update(1.0, Direction::Left, &nodes);
+
+        let right_portal = nodes
             .get_node_from_tiles(27.0, 17.0)
             .expect("right portal should exist");
-        let mut pacman = NodePacman::new(left, &nodes, NodeMovementMode::Reversible);
-        pacman.direction = Direction::Left;
-        pacman.target = left;
+        assert_eq!(pacman.current_node(), right_portal);
+    }
 
-        pacman.update(0.0, Direction::Stop, &nodes);
+    #[test]
+    fn configured_reset_places_pacman_between_nodes() {
+        let nodes = NodeGroup::pacman_maze();
+        let start_node = nodes
+            .get_node_from_tiles(15.0, 26.0)
+            .expect("level 4 pacman start node should exist");
+        let mut pacman = NodePacman::new(start_node, &nodes, NodeMovementMode::Reversible);
+        pacman.configure_start(start_node, Direction::Left, Some(Direction::Left), &nodes);
 
-        assert_eq!(pacman.current_node(), right);
-        assert_eq!(pacman.position(), nodes.position(right));
-        assert_eq!(pacman.collide_radius(), 5.0);
+        assert_eq!(pacman.direction(), Direction::Left);
+        assert_eq!(pacman.position(), Vector2::new(216.0, 416.0));
+    }
+
+    #[test]
+    fn access_restrictions_block_pacman_movement() {
+        let mut nodes = NodeGroup::pacman_maze();
+        let home = nodes.create_home_nodes(11.5, 14.0);
+        nodes.connect_home_nodes(home, (12.0, 14.0), Direction::Left);
+        nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
+        nodes.deny_home_access(EntityKind::Pacman);
+
+        let mut pacman = NodePacman::new(home, &nodes, NodeMovementMode::Reversible);
+        pacman.update(0.0, Direction::Down, &nodes);
+
+        assert_eq!(pacman.target(), home);
+        assert_eq!(pacman.direction(), Direction::Stop);
     }
 }
