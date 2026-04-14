@@ -22,3 +22,6 @@ pub const PINK: [u8; 4] = [255, 100, 150, 255];
 pub const TEAL: [u8; 4] = [100, 255, 255, 255];
 pub const ORANGE: [u8; 4] = [230, 190, 40, 255];
 pub const GREEN: [u8; 4] = [0, 255, 0, 255];
+pub const BUTTON_COLOR: [u8; 4] = [0, 0, 200, 255];
+pub const BUTTON_CLICK: [u8; 4] = [0, 0, 255, 255];
+pub const BUTTON_HOVER: [u8; 4] = [0, 0, 100, 255];

@@ -140,6 +140,23 @@ impl Renderer {
             pixels: buffer.pixels,
         }
     }
+
+    pub fn scene_position_for_terminal_cell(
+        &self,
+        geometry: TerminalGeometry,
+        column: u16,
+        row: u16,
+    ) -> Option<Vector2> {
+        if geometry.cols == 0 || geometry.rows == 0 {
+            return None;
+        }
+
+        let image_x = (column as f32 + 0.5) * self.image_width as f32 / geometry.cols as f32;
+        let image_y = (row as f32 + 0.5) * self.image_height as f32 / geometry.rows as f32;
+        let transform = SceneTransform::new(self.image_width as f32, self.image_height as f32);
+
+        Some(transform.inverse_point(image_x, image_y))
+    }
 }
 
 impl PixelBuffer {
@@ -315,6 +332,13 @@ impl SceneTransform {
         let x = (self.offset_x + point.x * self.scale).round() as i32;
         let y = (self.offset_y + point.y * self.scale).round() as i32;
         (x, y)
+    }
+
+    fn inverse_point(self, x: f32, y: f32) -> Vector2 {
+        Vector2::new(
+            (x - self.offset_x) / self.scale,
+            (y - self.offset_y) / self.scale,
+        )
     }
 
     fn rect(
