@@ -5,6 +5,7 @@ pub mod input;
 pub mod kitty;
 pub mod nodes;
 pub mod pacman;
+pub mod pellets;
 pub mod render;
 pub mod stack;
 pub mod terminal;
