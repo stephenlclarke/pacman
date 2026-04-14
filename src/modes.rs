@@ -118,6 +118,17 @@ impl ModeController {
             GhostMode::Spawn => {}
         }
     }
+
+    pub fn clear_freight_mode(&mut self) -> bool {
+        if self.current != GhostMode::Freight {
+            return false;
+        }
+
+        self.timer = 0.0;
+        self.time = None;
+        self.current = self.main_mode.mode;
+        true
+    }
 }
 
 impl Default for ModeController {

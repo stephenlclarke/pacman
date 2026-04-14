@@ -157,9 +157,20 @@ impl Level7Config {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct UpdateInput {
+    pub requested_direction: Direction,
+    pub pause_requested: bool,
+    pub start_requested: bool,
+    pub mouse_position: Option<Vector2>,
+    pub mouse_click_position: Option<Vector2>,
+    pub typed_chars: Vec<char>,
+}
+
 #[derive(Debug)]
 pub struct Game {
     scene: Scene,
+    quit_requested: bool,
 }
 
 #[derive(Debug)]
@@ -254,7 +265,18 @@ struct Level6State {
     config: Level6Config,
     maze_spec: MazeSpec,
     events: Vec<GameEvent>,
+    easter_egg_active: bool,
+    easter_egg_sequence_index: usize,
+    easter_egg_force_freight: bool,
+    easter_egg_blink: BlinkFeedback,
     return_to_title_requested: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BlinkFeedback {
+    toggles_remaining: u8,
+    timer: f32,
+    visible: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -415,35 +437,41 @@ impl Game {
             }
         };
 
-        Self { scene }
+        Self {
+            scene,
+            quit_requested: false,
+        }
     }
 
     pub fn update(&mut self, dt: f32, requested_direction: Direction, pause_requested: bool) {
-        self.update_with_input(dt, requested_direction, pause_requested, false, None, None);
+        self.update_with_input(
+            dt,
+            UpdateInput {
+                requested_direction,
+                pause_requested,
+                ..UpdateInput::default()
+            },
+        );
     }
 
-    pub fn update_with_input(
-        &mut self,
-        dt: f32,
-        requested_direction: Direction,
-        pause_requested: bool,
-        start_requested: bool,
-        mouse_position: Option<Vector2>,
-        mouse_click_position: Option<Vector2>,
-    ) {
+    pub fn update_with_input(&mut self, dt: f32, input: UpdateInput) {
+        let q_pressed = input.typed_chars.contains(&'q');
+
         match &mut self.scene {
             Scene::BlankScreen => {}
             Scene::BasicMovement { pacman } | Scene::Nodes { pacman, .. } => {
-                pacman.update(dt, requested_direction);
+                pacman.update(dt, input.requested_direction);
             }
-            Scene::NodeMovement { nodes, pacman } => pacman.update(dt, requested_direction, nodes),
+            Scene::NodeMovement { nodes, pacman } => {
+                pacman.update(dt, input.requested_direction, nodes)
+            }
             Scene::Maze {
                 nodes,
                 pacman,
                 pellets,
                 eat_pellets,
             } => {
-                pacman.update(dt, requested_direction, nodes);
+                pacman.update(dt, input.requested_direction, nodes);
                 if let Some(pellets) = pellets {
                     pellets.update(dt);
                     if *eat_pellets {
@@ -457,7 +485,7 @@ impl Game {
                 pellets,
                 ghost,
             } => {
-                pacman.update(dt, requested_direction, nodes);
+                pacman.update(dt, input.requested_direction, nodes);
                 ghost.update(
                     dt,
                     nodes,
@@ -479,18 +507,34 @@ impl Game {
                     ghost.start_spawn(nodes);
                 }
             }
-            Scene::Level4(state) => state.update(dt, requested_direction, pause_requested),
-            Scene::Level5(state) => state.update(dt, requested_direction, pause_requested),
-            Scene::Level6(state) => state.update(dt, requested_direction, pause_requested),
-            Scene::Level7(state) => state.update(
+            Scene::Level4(state) => {
+                state.update(dt, input.requested_direction, input.pause_requested)
+            }
+            Scene::Level5(state) => {
+                state.update(dt, input.requested_direction, input.pause_requested)
+            }
+            Scene::Level6(state) => state.update(
                 dt,
-                requested_direction,
-                pause_requested,
-                start_requested,
-                mouse_position,
-                mouse_click_position,
+                input.requested_direction,
+                input.pause_requested,
+                &input.typed_chars,
             ),
+            Scene::Level7(state) => state.update(dt, &input),
         }
+
+        if q_pressed
+            && match &self.scene {
+                Scene::Level6(state) => !state.easter_egg_active(),
+                Scene::Level7(state) => !state.easter_egg_active(),
+                _ => true,
+            }
+        {
+            self.quit_requested = true;
+        }
+    }
+
+    pub fn quit_requested(&self) -> bool {
+        self.quit_requested
     }
 
     pub fn drain_events(&mut self) -> Vec<GameEvent> {
@@ -1210,6 +1254,7 @@ impl Level5State {
 impl Level6State {
     const FRUIT_THRESHOLDS: [usize; 2] = [50, 140];
     const FLASH_TIME: f32 = 0.2;
+    const EASTER_EGG_CODE: [char; 5] = ['x', 'y', 'z', 'z', 'y'];
 
     fn new(config: Level6Config) -> Self {
         Self::start_level(1, 5, 0, Vec::new(), config)
@@ -1263,15 +1308,28 @@ impl Level6State {
             config,
             maze_spec,
             events: Vec::new(),
+            easter_egg_active: false,
+            easter_egg_sequence_index: 0,
+            easter_egg_force_freight: false,
+            easter_egg_blink: BlinkFeedback::default(),
             return_to_title_requested: false,
         }
     }
 
-    fn update(&mut self, dt: f32, requested_direction: Direction, pause_requested: bool) {
+    fn update(
+        &mut self,
+        dt: f32,
+        requested_direction: Direction,
+        pause_requested: bool,
+        typed_chars: &[char],
+    ) {
+        self.handle_easter_egg_input(typed_chars);
+        self.easter_egg_blink.update(dt);
         self.text_group.update(dt);
         self.pellets.update(dt);
 
         if !self.pause.paused() {
+            self.sustain_secret_freight_mode();
             self.ghosts.update(
                 dt,
                 &self.nodes,
@@ -1328,6 +1386,141 @@ impl Level6State {
 
     fn drain_events(&mut self) -> Vec<GameEvent> {
         std::mem::take(&mut self.events)
+    }
+
+    fn easter_egg_active(&self) -> bool {
+        self.easter_egg_active
+    }
+
+    fn handle_easter_egg_input(&mut self, typed_chars: &[char]) {
+        for &character in typed_chars {
+            let is_secret_code_input = self.update_easter_egg_sequence(character);
+
+            if !self.easter_egg_active {
+                continue;
+            }
+
+            match character {
+                'q' => self.toggle_secret_freight_mode(),
+                'p' => self.teleport_pacman_to_safest_node(),
+                'y' if !is_secret_code_input => self.reset_ghosts_to_start_positions(),
+                _ => {}
+            }
+        }
+    }
+
+    fn update_easter_egg_sequence(&mut self, character: char) -> bool {
+        if character == Self::EASTER_EGG_CODE[self.easter_egg_sequence_index] {
+            self.easter_egg_sequence_index += 1;
+            if self.easter_egg_sequence_index == Self::EASTER_EGG_CODE.len() {
+                self.easter_egg_sequence_index = 0;
+                self.toggle_easter_egg_mode();
+            }
+            return true;
+        }
+
+        self.easter_egg_sequence_index = usize::from(character == Self::EASTER_EGG_CODE[0]);
+        character == Self::EASTER_EGG_CODE[0]
+    }
+
+    fn toggle_easter_egg_mode(&mut self) {
+        self.easter_egg_active = !self.easter_egg_active;
+        self.easter_egg_sequence_index = 0;
+        self.easter_egg_blink.start();
+        if !self.easter_egg_active {
+            self.disable_secret_freight_mode();
+        }
+    }
+
+    fn toggle_secret_freight_mode(&mut self) {
+        if self.easter_egg_force_freight {
+            self.disable_secret_freight_mode();
+            return;
+        }
+
+        self.easter_egg_force_freight = true;
+        self.ghosts.start_freight();
+        self.events.push(GameEvent::PowerPelletEaten);
+    }
+
+    fn disable_secret_freight_mode(&mut self) {
+        if !self.easter_egg_force_freight {
+            return;
+        }
+
+        self.easter_egg_force_freight = false;
+        self.ghosts.end_freight();
+    }
+
+    fn sustain_secret_freight_mode(&mut self) {
+        if !self.easter_egg_force_freight {
+            return;
+        }
+
+        self.ghosts.sustain_freight();
+    }
+
+    fn teleport_pacman_to_safest_node(&mut self) {
+        let Some(target) = self
+            .nodes
+            .node_ids()
+            .filter(|&node_id| {
+                Direction::cardinals().into_iter().any(|direction| {
+                    self.nodes
+                        .can_travel(node_id, direction, EntityKind::Pacman)
+                })
+            })
+            .max_by(|&lhs, &rhs| {
+                let lhs_distance = self.minimum_ghost_distance_squared(lhs);
+                let rhs_distance = self.minimum_ghost_distance_squared(rhs);
+                lhs_distance.total_cmp(&rhs_distance)
+            })
+        else {
+            return;
+        };
+
+        self.pacman.teleport_to_node(target, &self.nodes);
+    }
+
+    fn minimum_ghost_distance_squared(&self, node_id: usize) -> f32 {
+        let position = self.nodes.position(node_id);
+        self.ghosts
+            .iter()
+            .map(|ghost| (position - ghost.position()).magnitude_squared())
+            .fold(f32::INFINITY, f32::min)
+    }
+
+    fn reset_ghosts_to_start_positions(&mut self) {
+        self.ghosts.reset(&self.nodes);
+        self.restore_ghost_access_rules();
+        if self.easter_egg_force_freight {
+            self.ghosts.start_freight();
+        }
+    }
+
+    fn restore_ghost_access_rules(&mut self) {
+        self.nodes.deny_home_access_list(self.ghosts.entity_kinds());
+        for (direction, position) in self.maze_spec.deny_ghost_access_positions() {
+            self.nodes.deny_access_list(
+                position.0,
+                position.1,
+                direction,
+                self.ghosts.entity_kinds(),
+            );
+        }
+    }
+
+    fn secret_mode_flags(&self) -> (bool, bool) {
+        (self.easter_egg_active, self.easter_egg_force_freight)
+    }
+
+    fn apply_secret_mode_flags(&mut self, easter_egg_active: bool, easter_egg_force_freight: bool) {
+        self.easter_egg_active = easter_egg_active;
+        self.easter_egg_force_freight = easter_egg_force_freight;
+        self.easter_egg_sequence_index = 0;
+        if self.easter_egg_force_freight {
+            self.ghosts.start_freight();
+        }
     }
 
     fn update_score(&mut self, points: u32) {
@@ -1496,6 +1689,7 @@ impl Level6State {
             }
             Level6Action::ResetLevel => self.reset_level(),
             Level6Action::NextLevel => {
+                let (easter_egg_active, easter_egg_force_freight) = self.secret_mode_flags();
                 *self = Self::start_level(
                     self.level + 1,
                     self.lives,
@@ -1503,12 +1697,15 @@ impl Level6State {
                     self.fruit_captured.clone(),
                     self.config,
                 );
+                self.apply_secret_mode_flags(easter_egg_active, easter_egg_force_freight);
             }
             Level6Action::RestartGame => {
                 if self.config.return_to_title {
                     self.return_to_title_requested = true;
                 } else {
+                    let (easter_egg_active, easter_egg_force_freight) = self.secret_mode_flags();
                     *self = Self::start_level(1, 5, 0, Vec::new(), self.config);
+                    self.apply_secret_mode_flags(easter_egg_active, easter_egg_force_freight);
                 }
             }
         }
@@ -1519,14 +1716,9 @@ impl Level6State {
         self.pacman.reset(&self.nodes);
         self.pacman_sprites.reset();
         self.ghosts.reset(&self.nodes);
-        self.nodes.deny_home_access_list(self.ghosts.entity_kinds());
-        for (direction, position) in self.maze_spec.deny_ghost_access_positions() {
-            self.nodes.deny_access_list(
-                position.0,
-                position.1,
-                direction,
-                self.ghosts.entity_kinds(),
-            );
+        self.restore_ghost_access_rules();
+        if self.easter_egg_force_freight {
+            self.ghosts.start_freight();
         }
         self.fruit = None;
         self.flash_background = false;
@@ -1557,7 +1749,7 @@ impl Level6State {
                 anchor: SpriteAnchor::TopLeft,
             });
         }
-        if self.pacman.visible() {
+        if self.pacman.visible() && self.easter_egg_blink.visible() {
             frame.sprites.push(Sprite {
                 image: self.pacman_sprites.current(),
                 position: sprite_draw_position(self.pacman.position()),
@@ -1596,6 +1788,50 @@ impl Level6State {
                 ),
                 anchor: SpriteAnchor::TopLeft,
             });
+        }
+    }
+}
+
+impl BlinkFeedback {
+    const TOGGLES: u8 = 6;
+    const INTERVAL: f32 = 0.1;
+
+    fn start(&mut self) {
+        self.toggles_remaining = Self::TOGGLES;
+        self.timer = 0.0;
+        self.visible = false;
+    }
+
+    fn update(&mut self, dt: f32) {
+        if self.toggles_remaining == 0 {
+            self.visible = true;
+            return;
+        }
+
+        self.timer += dt;
+        while self.timer >= Self::INTERVAL && self.toggles_remaining > 0 {
+            self.timer -= Self::INTERVAL;
+            self.toggles_remaining = self.toggles_remaining.saturating_sub(1);
+            self.visible = !self.visible;
+        }
+
+        if self.toggles_remaining == 0 {
+            self.timer = 0.0;
+            self.visible = true;
+        }
+    }
+
+    fn visible(&self) -> bool {
+        self.visible
+    }
+}
+
+impl Default for BlinkFeedback {
+    fn default() -> Self {
+        Self {
+            toggles_remaining: 0,
+            timer: 0.0,
+            visible: true,
         }
     }
 }
@@ -1738,17 +1974,14 @@ impl Level7State {
         }
     }
 
-    fn update(
-        &mut self,
-        dt: f32,
-        requested_direction: Direction,
-        pause_requested: bool,
-        start_requested: bool,
-        mouse_position: Option<Vector2>,
-        mouse_click_position: Option<Vector2>,
-    ) {
+    fn update(&mut self, dt: f32, input: &UpdateInput) {
         if let Some(gameplay) = &mut self.gameplay {
-            gameplay.update(dt, requested_direction, pause_requested);
+            gameplay.update(
+                dt,
+                input.requested_direction,
+                input.pause_requested,
+                &input.typed_chars,
+            );
             self.events.extend(gameplay.drain_events());
 
             if gameplay.return_to_title_requested {
@@ -1759,12 +1992,12 @@ impl Level7State {
             return;
         }
 
-        self.title_screen.update(mouse_position);
+        self.title_screen.update(input.mouse_position);
         let should_start = self
             .title_screen
-            .start_requested(start_requested, mouse_click_position);
+            .start_requested(input.start_requested, input.mouse_click_position);
 
-        if mouse_click_position.is_some_and(|position| {
+        if input.mouse_click_position.is_some_and(|position| {
             self.config.buttons
                 && self
                     .title_screen
@@ -1783,6 +2016,12 @@ impl Level7State {
 
     fn drain_events(&mut self) -> Vec<GameEvent> {
         std::mem::take(&mut self.events)
+    }
+
+    fn easter_egg_active(&self) -> bool {
+        self.gameplay
+            .as_ref()
+            .is_some_and(Level6State::easter_egg_active)
     }
 
     fn append_renderables(&self, frame: &mut FrameData) {
@@ -1828,10 +2067,11 @@ fn sprite_draw_position(position: Vector2) -> Vector2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        Game, GameEvent, Level4Action, Level4State, Level5State, Level6Config, Level6State, Stage,
-        sprite_draw_position,
+        BlinkFeedback, Game, GameEvent, Level4Action, Level4State, Level5State, Level6Config,
+        Level6State, Scene, Stage, UpdateInput, sprite_draw_position,
     };
     use crate::{
+        actors::EntityKind,
         constants::{SCREEN_HEIGHT, SCREEN_WIDTH, TILE_HEIGHT, TILE_WIDTH},
         nodes::NodeGroup,
         pacman::Direction,
@@ -2043,7 +2283,7 @@ mod tests {
         let before = state.pacman_sprites.current();
         state.pacman.die();
 
-        state.update(0.2, Direction::Stop, false);
+        state.update(0.2, Direction::Stop, false, &[]);
 
         assert_ne!(before.pixels, state.pacman_sprites.current().pixels);
     }
@@ -2060,7 +2300,14 @@ mod tests {
         let mut game = Game::new(Stage::AddTitleScreen);
         let _ = game.drain_events();
 
-        game.update_with_input(0.0, Direction::Stop, false, true, None, None);
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                start_requested: true,
+                ..UpdateInput::default()
+            },
+        );
 
         let events = game.drain_events();
         assert_eq!(events, vec![GameEvent::GameStarted]);
@@ -2075,11 +2322,12 @@ mod tests {
 
         game.update_with_input(
             0.0,
-            Direction::Stop,
-            false,
-            false,
-            Some(button_center),
-            Some(button_center),
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                mouse_position: Some(button_center),
+                mouse_click_position: Some(button_center),
+                ..UpdateInput::default()
+            },
         );
 
         let events = game.drain_events();
@@ -2098,11 +2346,11 @@ mod tests {
 
         game.update_with_input(
             0.0,
-            Direction::Stop,
-            false,
-            false,
-            None,
-            Some(button_center),
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                mouse_click_position: Some(button_center),
+                ..UpdateInput::default()
+            },
         );
 
         let events = game.drain_events();
@@ -2110,5 +2358,114 @@ mod tests {
             events,
             vec![GameEvent::ButtonClicked, GameEvent::GameStarted]
         );
+    }
+
+    #[test]
+    fn q_still_quits_when_secret_mode_is_inactive() {
+        let mut game = Game::new(Stage::Level7);
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['q'],
+                ..UpdateInput::default()
+            },
+        );
+
+        assert!(game.quit_requested());
+    }
+
+    #[test]
+    fn xyzzy_toggles_secret_mode_and_starts_blink_feedback() {
+        let mut state = Level6State::new(Level6Config::level7());
+
+        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+
+        assert!(state.easter_egg_active);
+        assert_eq!(
+            state.easter_egg_blink.toggles_remaining,
+            BlinkFeedback::TOGGLES
+        );
+
+        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+
+        assert!(!state.easter_egg_active);
+        assert_eq!(
+            state.easter_egg_blink.toggles_remaining,
+            BlinkFeedback::TOGGLES
+        );
+    }
+
+    #[test]
+    fn secret_q_toggles_freight_mode_without_requesting_quit() {
+        let mut game = Game::new(Stage::MoreMazes);
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['x', 'y', 'z', 'z', 'y'],
+                ..UpdateInput::default()
+            },
+        );
+        assert!(!game.quit_requested());
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['q'],
+                ..UpdateInput::default()
+            },
+        );
+
+        let Scene::Level6(state) = &game.scene else {
+            panic!("expected level 6 scene");
+        };
+        assert!(state.easter_egg_force_freight);
+        assert!(!game.quit_requested());
+    }
+
+    #[test]
+    fn secret_p_teleports_pacman_to_the_safest_node() {
+        let mut state = Level6State::new(Level6Config::level7());
+        state.easter_egg_active = true;
+
+        state.handle_easter_egg_input(&['p']);
+
+        let expected = state
+            .nodes
+            .node_ids()
+            .filter(|&node_id| {
+                Direction::cardinals().into_iter().any(|direction| {
+                    state
+                        .nodes
+                        .can_travel(node_id, direction, EntityKind::Pacman)
+                })
+            })
+            .max_by(|&lhs, &rhs| {
+                let lhs_distance = state.minimum_ghost_distance_squared(lhs);
+                let rhs_distance = state.minimum_ghost_distance_squared(rhs);
+                lhs_distance.total_cmp(&rhs_distance)
+            })
+            .expect("a safest node should exist");
+
+        assert_eq!(state.pacman.current_node(), expected);
+    }
+
+    #[test]
+    fn secret_y_sends_ghosts_back_to_their_start_positions() {
+        let mut state = Level6State::new(Level6Config::level7());
+        state.easter_egg_active = true;
+        let expected_positions: Vec<_> = Level6State::new(Level6Config::level7())
+            .ghosts
+            .iter()
+            .map(|ghost| ghost.position())
+            .collect();
+
+        state.handle_easter_egg_input(&['y']);
+
+        let reset_positions: Vec<_> = state.ghosts.iter().map(|ghost| ghost.position()).collect();
+        assert_eq!(reset_positions, expected_positions);
     }
 }

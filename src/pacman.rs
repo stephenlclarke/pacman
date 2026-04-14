@@ -254,6 +254,13 @@ impl NodePacman {
         }
     }
 
+    pub fn teleport_to_node(&mut self, node: NodeId, nodes: &NodeGroup) {
+        self.node = node;
+        self.target = node;
+        self.direction = Direction::Stop;
+        self.set_position(nodes);
+    }
+
     fn update_teleport(&mut self, requested_direction: Direction, nodes: &NodeGroup) {
         self.direction = requested_direction;
         self.node = self.get_new_target(requested_direction, nodes);

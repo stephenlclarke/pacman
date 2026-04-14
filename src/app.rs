@@ -12,7 +12,7 @@ use crossterm::{
 
 use crate::{
     audio::AudioManager,
-    game::{Game, Stage},
+    game::{Game, Stage, UpdateInput},
     input::InputController,
     kitty::KittyGraphics,
     render::Renderer,
@@ -64,6 +64,7 @@ pub fn run() -> Result<()> {
 
         let pause_requested = input.take_pause_requested();
         let start_requested = input.take_start_requested();
+        let typed_chars = input.take_typed_chars();
         let mouse_position = input.mouse_cell().and_then(|mouse_cell| {
             renderer.scene_position_for_terminal_cell(
                 terminal_geometry,
@@ -80,12 +81,18 @@ pub fn run() -> Result<()> {
         });
         game.update_with_input(
             dt,
-            input.direction(),
-            pause_requested,
-            start_requested,
-            mouse_position,
-            mouse_click_position,
+            UpdateInput {
+                requested_direction: input.direction(),
+                pause_requested,
+                start_requested,
+                mouse_position,
+                mouse_click_position,
+                typed_chars,
+            },
         );
+        if game.quit_requested() {
+            break;
+        }
         if let Some(audio) = &mut audio {
             for event in game.drain_events() {
                 audio.handle_event(event);
@@ -111,7 +118,7 @@ pub fn run() -> Result<()> {
 fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
     let args: Vec<String> = args.collect();
     if args.is_empty() {
-        return Ok(Stage::BasicMovement);
+        return Ok(Stage::Level7);
     }
 
     match args[0].as_str() {
@@ -157,7 +164,9 @@ fn parse_stage(args: impl Iterator<Item = String>) -> Result<Stage> {
 
 fn print_help() {
     println!(
-        "Usage: cargo run -- [blank-screen|basic-movement]
+        "Usage: cargo run [-- <mode>]
+
+Running `cargo run` with no mode launches the final Level 7 target.
 
 Modes:
   blank-screen    Render the Start-tab blank screen stage.
@@ -202,9 +211,9 @@ mod tests {
     use super::{Stage, parse_stage};
 
     #[test]
-    fn default_stage_is_basic_movement() {
+    fn default_stage_is_level7() {
         let stage = parse_stage(std::iter::empty()).expect("stage parsing should succeed");
-        assert_eq!(stage, Stage::BasicMovement);
+        assert_eq!(stage, Stage::Level7);
     }
 
     #[test]
