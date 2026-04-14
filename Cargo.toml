@@ -1,0 +1,11 @@
+[package]
+name = "pacman"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+crossterm = "0.29"
+libc = "0.2"
+png = "0.18"
