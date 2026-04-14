@@ -105,7 +105,11 @@ impl NodeGroup {
     }
 
     pub fn pacman_maze() -> Self {
-        Self::from_text(MAZE_ONE, &['+', 'P', 'n'], &['.', '-', '|', 'p'])
+        Self::from_pacman_layout(MAZE_ONE)
+    }
+
+    pub fn from_pacman_layout(text: &str) -> Self {
+        Self::from_text(text, &['+', 'P', 'n'], &['.', '-', '|', 'p'])
     }
 
     pub fn start_node(&self) -> NodeId {

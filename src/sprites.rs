@@ -18,6 +18,9 @@ use crate::{
 const SPRITESHEET_BYTES: &[u8] = include_bytes!("../assets/spritesheet.png");
 const MAZE_FILE: &str = include_str!("../assets/maze1.txt");
 const MAZE_ROTATIONS: &str = include_str!("../assets/maze1_rotation.txt");
+const FRUIT_TILE_POSITIONS: [(u32, u32); 6] =
+    [(16, 8), (18, 8), (20, 8), (16, 10), (18, 10), (20, 10)];
+const FLASH_BACKGROUND_ROW: u32 = 5;
 
 #[derive(Clone, Debug)]
 struct SpriteSheet {
@@ -30,6 +33,7 @@ pub struct PacmanSprites {
     right: Animator<Arc<RenderedImage>>,
     up: Animator<Arc<RenderedImage>>,
     down: Animator<Arc<RenderedImage>>,
+    death: Animator<Arc<RenderedImage>>,
     stop_left: Arc<RenderedImage>,
     stop_right: Arc<RenderedImage>,
     stop_up: Arc<RenderedImage>,
@@ -54,7 +58,7 @@ pub struct GhostSprites {
 
 #[derive(Clone, Debug)]
 pub struct FruitSprites {
-    image: Arc<RenderedImage>,
+    images: [Arc<RenderedImage>; 6],
 }
 
 #[derive(Clone, Debug)]
@@ -118,6 +122,13 @@ impl PacmanSprites {
                 20.0,
                 true,
             ),
+            death: Animator::new(
+                (0..=10)
+                    .map(|index| sheet.crop(index * 2, 12, 2, 2))
+                    .collect(),
+                6.0,
+                false,
+            ),
             stop_left: stop_left.clone(),
             stop_right,
             stop_up,
@@ -132,29 +143,43 @@ impl PacmanSprites {
         self.right.reset();
         self.up.reset();
         self.down.reset();
+        self.death.reset();
         self.stop_image = self.stop_left.clone();
         self.current = self.stop_left.clone();
     }
 
     pub fn update(&mut self, dt: f32, direction: Direction) -> Arc<RenderedImage> {
-        self.current = match direction {
-            Direction::Left => {
-                self.stop_image = self.stop_left.clone();
-                self.left.update(dt)
+        self.update_for_state(dt, direction, true)
+    }
+
+    pub fn update_for_state(
+        &mut self,
+        dt: f32,
+        direction: Direction,
+        alive: bool,
+    ) -> Arc<RenderedImage> {
+        self.current = if alive {
+            match direction {
+                Direction::Left => {
+                    self.stop_image = self.stop_left.clone();
+                    self.left.update(dt)
+                }
+                Direction::Right => {
+                    self.stop_image = self.stop_right.clone();
+                    self.right.update(dt)
+                }
+                Direction::Up => {
+                    self.stop_image = self.stop_up.clone();
+                    self.up.update(dt)
+                }
+                Direction::Down => {
+                    self.stop_image = self.stop_down.clone();
+                    self.down.update(dt)
+                }
+                Direction::Stop => self.stop_image.clone(),
             }
-            Direction::Right => {
-                self.stop_image = self.stop_right.clone();
-                self.right.update(dt)
-            }
-            Direction::Up => {
-                self.stop_image = self.stop_up.clone();
-                self.up.update(dt)
-            }
-            Direction::Down => {
-                self.stop_image = self.stop_down.clone();
-                self.down.update(dt)
-            }
-            Direction::Stop => self.stop_image.clone(),
+        } else {
+            self.death.update(dt)
         };
 
         self.current.clone()
@@ -231,12 +256,16 @@ impl Default for GhostSprites {
 impl FruitSprites {
     pub fn new() -> Self {
         Self {
-            image: shared_sheet().crop(16, 8, 2, 2),
+            images: FRUIT_TILE_POSITIONS.map(|(x, y)| shared_sheet().crop(x, y, 2, 2)),
         }
     }
 
-    pub fn image(&self) -> Arc<RenderedImage> {
-        self.image.clone()
+    pub fn image(&self, index: usize) -> Arc<RenderedImage> {
+        self.images[index % self.images.len()].clone()
+    }
+
+    pub fn image_for_level(&self, level_index: u32) -> Arc<RenderedImage> {
+        self.image(level_index as usize)
     }
 }
 
@@ -273,15 +302,26 @@ impl LifeSprites {
 
 impl MazeSprites {
     pub fn new() -> Self {
+        Self::from_layout(MAZE_FILE, MAZE_ROTATIONS)
+    }
+
+    pub fn from_layout(layout: &str, rotations: &str) -> Self {
         Self {
-            data: parse_grid(MAZE_FILE),
-            rotations: parse_grid(MAZE_ROTATIONS),
+            data: parse_grid(layout),
+            rotations: parse_grid(rotations),
         }
     }
 
     pub fn construct_background(&self, level: u32) -> Arc<RenderedImage> {
+        self.construct_background_row(level.saturating_sub(1) % 5)
+    }
+
+    pub fn construct_flash_background(&self) -> Arc<RenderedImage> {
+        self.construct_background_row(FLASH_BACKGROUND_ROW)
+    }
+
+    pub fn construct_background_row(&self, sprite_row: u32) -> Arc<RenderedImage> {
         let sheet = shared_sheet();
-        let sprite_row = level.saturating_sub(1) % 5;
         let mut background = solid_image(SCREEN_WIDTH, SCREEN_HEIGHT, BLACK);
 
         for (row, tiles) in self.data.iter().enumerate() {
@@ -435,16 +475,14 @@ fn maze_tile_sprite_x(tile: char) -> Option<u32> {
 }
 
 fn rotate_image(image: &Arc<RenderedImage>, quarter_turns: u8) -> RenderedImage {
-    match quarter_turns % 4 {
-        0 => image.as_ref().clone(),
-        1 => rotate_once(image),
-        2 => rotate_once(&Arc::new(rotate_once(image))),
-        3 => rotate_once(&Arc::new(rotate_once(&Arc::new(rotate_once(image))))),
-        _ => unreachable!(),
+    let mut rotated = image.as_ref().clone();
+    for _ in 0..quarter_turns % 4 {
+        rotated = rotate_once_counterclockwise(&rotated);
     }
+    rotated
 }
 
-fn rotate_once(image: &Arc<RenderedImage>) -> RenderedImage {
+fn rotate_once_counterclockwise(image: &RenderedImage) -> RenderedImage {
     let mut rotated = vec![0; image.pixels.len()];
     let width = image.width as usize;
     let height = image.height as usize;
@@ -452,8 +490,8 @@ fn rotate_once(image: &Arc<RenderedImage>) -> RenderedImage {
     for y in 0..height {
         for x in 0..width {
             let src_index = (y * width + x) * 4;
-            let dest_x = height - 1 - y;
-            let dest_y = x;
+            let dest_x = y;
+            let dest_y = width - 1 - x;
             let dest_index = (dest_y * height + dest_x) * 4;
             rotated[dest_index..dest_index + 4]
                 .copy_from_slice(&image.pixels[src_index..src_index + 4]);
@@ -515,7 +553,11 @@ fn grayscale_alpha_to_rgba(raw: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LifeSprites, MazeSprites, PacmanSprites, shared_sheet};
+    use std::sync::Arc;
+
+    use super::{
+        LifeSprites, MazeSprites, PacmanSprites, RenderedImage, rotate_image, shared_sheet,
+    };
 
     #[test]
     fn spritesheet_decodes_successfully() {
@@ -543,10 +585,50 @@ mod tests {
     }
 
     #[test]
+    fn pacman_death_animation_advances_to_a_different_frame() {
+        let mut sprites = PacmanSprites::new();
+
+        let before = sprites.current();
+        let after = sprites.update_for_state(0.2, crate::pacman::Direction::Stop, false);
+
+        assert_ne!(before.pixels, after.pixels);
+    }
+
+    #[test]
+    fn fruit_sprites_cycle_by_level() {
+        let sprites = super::FruitSprites::new();
+
+        assert_eq!(sprites.image_for_level(0).pixels, sprites.image(0).pixels);
+        assert_eq!(sprites.image_for_level(7).pixels, sprites.image(1).pixels);
+    }
+
+    #[test]
     fn life_sprites_track_remaining_lives() {
         let mut lives = LifeSprites::new(5);
         lives.remove_image();
 
         assert_eq!(lives.lives(), 4);
+    }
+
+    #[test]
+    fn quarter_turns_rotate_counterclockwise() {
+        let image = Arc::new(RenderedImage {
+            width: 2,
+            height: 3,
+            pixels: vec![
+                1, 0, 0, 255, 2, 0, 0, 255, 3, 0, 0, 255, 4, 0, 0, 255, 5, 0, 0, 255, 6, 0, 0, 255,
+            ],
+        });
+
+        let rotated = rotate_image(&image, 1);
+        let red_values: Vec<u8> = rotated
+            .pixels
+            .chunks_exact(4)
+            .map(|pixel| pixel[0])
+            .collect();
+
+        assert_eq!(rotated.width, 3);
+        assert_eq!(rotated.height, 2);
+        assert_eq!(red_values, vec![2, 4, 6, 1, 3, 5]);
     }
 }
