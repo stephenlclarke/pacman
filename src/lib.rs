@@ -1,7 +1,9 @@
 pub mod actors;
 pub mod animation;
 pub mod app;
+pub mod arcade;
 pub mod audio;
+pub mod autopilot;
 pub mod constants;
 pub mod fruit;
 pub mod game;
@@ -16,7 +18,6 @@ pub mod pause;
 pub mod pellets;
 pub mod render;
 pub mod sprites;
-pub mod stack;
 pub mod terminal;
 pub mod text;
 pub mod vector;

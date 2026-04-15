@@ -6,7 +6,7 @@ use crate::{
     vector::Vector2,
 };
 
-const MAZE_ONE: &str = include_str!("../assets/maze1.txt");
+const MAZE_ONE: &str = include_str!("../assets/arcade/maze-logic.txt");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PelletKind {
@@ -51,6 +51,10 @@ impl Pellet {
             flash_time: POWER_PELLET_FLASH_TIME,
             timer: 0.0,
         }
+    }
+
+    pub fn position(&self) -> Vector2 {
+        self.position
     }
 
     pub fn points(&self) -> u32 {
@@ -106,6 +110,10 @@ impl PelletGroup {
         for pellet in &mut self.pellets {
             pellet.update(dt);
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Pellet> {
+        self.pellets.iter()
     }
 
     pub fn try_eat(&mut self, position: Vector2, collide_radius: f32) -> Option<Pellet> {

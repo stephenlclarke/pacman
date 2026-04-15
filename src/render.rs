@@ -48,6 +48,7 @@ pub struct Line {
 pub struct Renderer {
     image_width: u32,
     image_height: u32,
+    render_target: RenderedImage,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,12 +64,6 @@ pub struct Sprite {
     pub anchor: SpriteAnchor,
 }
 
-struct PixelBuffer {
-    width: usize,
-    height: usize,
-    pixels: Vec<u8>,
-}
-
 #[derive(Clone, Copy)]
 struct SceneTransform {
     scale: f32,
@@ -82,16 +77,19 @@ impl Renderer {
         Self {
             image_width,
             image_height,
+            render_target: RenderedImage::new_blank(image_width, image_height),
         }
     }
 
     pub fn resize(&mut self, geometry: TerminalGeometry) {
-        *self = Self::new(geometry);
+        let (image_width, image_height) = raster_size(geometry);
+        self.image_width = image_width;
+        self.image_height = image_height;
+        self.render_target.resize(image_width, image_height);
     }
 
-    pub fn render(&self, frame: &FrameData) -> RenderedImage {
-        let mut buffer = PixelBuffer::new(self.image_width as usize, self.image_height as usize);
-        buffer.fill(Color::from_rgba(BLACK));
+    pub fn render(&mut self, frame: &FrameData) -> &RenderedImage {
+        self.render_target.clear(Color::from_rgba(BLACK));
 
         let transform = SceneTransform::new(self.image_width as f32, self.image_height as f32);
 
@@ -102,13 +100,14 @@ impl Renderer {
                 background.height as f32,
                 SpriteAnchor::TopLeft,
             );
-            buffer.draw_image(background, x, y, width, height);
+            self.render_target
+                .draw_image(background, x, y, width, height);
         }
 
         for line in &frame.lines {
             let (start_x, start_y) = transform.point(line.start);
             let (end_x, end_y) = transform.point(line.end);
-            buffer.draw_line(
+            self.render_target.draw_line(
                 start_x,
                 start_y,
                 end_x,
@@ -121,7 +120,12 @@ impl Renderer {
         for circle in &frame.circles {
             let (center_x, center_y, radius) =
                 transform.circle(circle.center.x, circle.center.y, circle.radius);
-            buffer.draw_filled_circle(center_x, center_y, radius, Color::from_rgba(circle.color));
+            self.render_target.draw_filled_circle(
+                center_x,
+                center_y,
+                radius,
+                Color::from_rgba(circle.color),
+            );
         }
 
         for sprite in &frame.sprites {
@@ -131,14 +135,11 @@ impl Renderer {
                 sprite.image.height as f32,
                 sprite.anchor,
             );
-            buffer.draw_image(&sprite.image, x, y, width, height);
+            self.render_target
+                .draw_image(&sprite.image, x, y, width, height);
         }
 
-        RenderedImage {
-            width: self.image_width,
-            height: self.image_height,
-            pixels: buffer.pixels,
-        }
+        &self.render_target
     }
 
     pub fn scene_position_for_terminal_cell(
@@ -159,20 +160,27 @@ impl Renderer {
     }
 }
 
-impl PixelBuffer {
-    fn new(width: usize, height: usize) -> Self {
+impl RenderedImage {
+    fn new_blank(width: u32, height: u32) -> Self {
         Self {
             width,
             height,
-            pixels: vec![0; width * height * 4],
+            pixels: vec![0; width as usize * height as usize * 4],
         }
     }
 
-    fn fill(&mut self, color: Color) {
-        for y in 0..self.height {
-            for x in 0..self.width {
-                self.put_pixel(x as i32, y as i32, color);
-            }
+    fn resize(&mut self, width: u32, height: u32) {
+        self.width = width;
+        self.height = height;
+        self.pixels.resize(width as usize * height as usize * 4, 0);
+    }
+
+    fn clear(&mut self, color: Color) {
+        for pixel in self.pixels.chunks_exact_mut(4) {
+            pixel[0] = color.0;
+            pixel[1] = color.1;
+            pixel[2] = color.2;
+            pixel[3] = color.3;
         }
     }
 
@@ -234,11 +242,13 @@ impl PixelBuffer {
             return;
         };
 
-        if x >= self.width || y >= self.height {
+        let width = self.width as usize;
+        let height = self.height as usize;
+        if x >= width || y >= height {
             return;
         }
 
-        let index = (y * self.width + x) * 4;
+        let index = (y * width + x) * 4;
         self.pixels[index] = color.0;
         self.pixels[index + 1] = color.1;
         self.pixels[index + 2] = color.2;
@@ -257,10 +267,18 @@ impl PixelBuffer {
             return;
         }
 
-        for dy in 0..dest_height {
-            let src_y = (dy as u32 * image.height / dest_height as u32) as usize;
-            for dx in 0..dest_width {
-                let src_x = (dx as u32 * image.width / dest_width as u32) as usize;
+        let start_x = dest_x.max(0);
+        let start_y = dest_y.max(0);
+        let end_x = (dest_x + dest_width).min(self.width as i32);
+        let end_y = (dest_y + dest_height).min(self.height as i32);
+        if start_x >= end_x || start_y >= end_y {
+            return;
+        }
+
+        for y in start_y..end_y {
+            let src_y = ((y - dest_y) as u32 * image.height / dest_height as u32) as usize;
+            for x in start_x..end_x {
+                let src_x = ((x - dest_x) as u32 * image.width / dest_width as u32) as usize;
                 let src_index = (src_y * image.width as usize + src_x) * 4;
                 let src = Color(
                     image.pixels[src_index],
@@ -272,36 +290,30 @@ impl PixelBuffer {
                     continue;
                 }
 
-                self.blend_pixel(dest_x + dx, dest_y + dy, src);
+                self.blend_pixel(x as usize, y as usize, src);
             }
         }
     }
 
-    fn blend_pixel(&mut self, x: i32, y: i32, source: Color) {
-        if x < 0 || y < 0 {
+    fn blend_pixel(&mut self, x: usize, y: usize, source: Color) {
+        let index = (y * self.width as usize + x) * 4;
+        if source.3 == 255 {
+            self.pixels[index] = source.0;
+            self.pixels[index + 1] = source.1;
+            self.pixels[index + 2] = source.2;
+            self.pixels[index + 3] = 255;
             return;
         }
 
-        let x = usize::try_from(x).ok();
-        let y = usize::try_from(y).ok();
-        let (Some(x), Some(y)) = (x, y) else {
-            return;
-        };
-
-        if x >= self.width || y >= self.height {
-            return;
-        }
-
-        let index = (y * self.width + x) * 4;
-        let alpha = source.3 as f32 / 255.0;
-        let inverse = 1.0 - alpha;
+        let alpha = source.3 as u16;
+        let inverse = 255 - alpha;
 
         self.pixels[index] =
-            (source.0 as f32 * alpha + self.pixels[index] as f32 * inverse).round() as u8;
+            ((source.0 as u16 * alpha + self.pixels[index] as u16 * inverse + 127) / 255) as u8;
         self.pixels[index + 1] =
-            (source.1 as f32 * alpha + self.pixels[index + 1] as f32 * inverse).round() as u8;
+            ((source.1 as u16 * alpha + self.pixels[index + 1] as u16 * inverse + 127) / 255) as u8;
         self.pixels[index + 2] =
-            (source.2 as f32 * alpha + self.pixels[index + 2] as f32 * inverse).round() as u8;
+            ((source.2 as u16 * alpha + self.pixels[index + 2] as u16 * inverse + 127) / 255) as u8;
         self.pixels[index + 3] = 255;
     }
 }
@@ -418,12 +430,18 @@ mod tests {
         ]
     }
 
+    fn screen_renderer() -> Renderer {
+        Renderer::new(TerminalGeometry {
+            cols: 10,
+            rows: 10,
+            pixel_width: SCREEN_WIDTH as u16,
+            pixel_height: SCREEN_HEIGHT as u16,
+        })
+    }
+
     #[test]
     fn pacman_render_paints_yellow_pixels() {
-        let renderer = Renderer {
-            image_width: SCREEN_WIDTH,
-            image_height: SCREEN_HEIGHT,
-        };
+        let mut renderer = screen_renderer();
         let frame = FrameData {
             background: None,
             circles: vec![Circle {
@@ -466,10 +484,7 @@ mod tests {
 
     #[test]
     fn line_render_paints_white_pixels() {
-        let renderer = Renderer {
-            image_width: SCREEN_WIDTH,
-            image_height: SCREEN_HEIGHT,
-        };
+        let mut renderer = screen_renderer();
         let frame = FrameData {
             background: None,
             circles: Vec::new(),

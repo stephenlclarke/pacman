@@ -3,32 +3,31 @@ use crate::{actors::GhostKind, pacman::Direction};
 type TilePosition = (f32, f32);
 type PortalPair = (TilePosition, TilePosition);
 
-const MAZE1: &str = include_str!("../assets/maze1.txt");
-const MAZE1_ROTATION: &str = include_str!("../assets/maze1_rotation.txt");
-const MAZE2: &str = include_str!("../assets/maze2.txt");
-const MAZE2_ROTATION: &str = include_str!("../assets/maze2_rotation.txt");
+const MAZE1: &str = include_str!("../assets/arcade/maze-logic.txt");
+const MAZE1_METADATA: &str = include_str!("../assets/arcade/maze-metadata.txt");
 
 #[derive(Clone, Copy, Debug)]
 pub struct MazeSpec {
     pub name: &'static str,
     pub layout: &'static str,
-    pub rotation: &'static str,
-    pub portal_pairs: &'static [PortalPair],
+    pub portal_pairs: [PortalPair; 1],
     pub home_offset: TilePosition,
     pub home_connect_left: TilePosition,
     pub home_connect_right: TilePosition,
+    pub blinky_start_pixels: TilePosition,
+    pub pinky_start_pixels: TilePosition,
+    pub inky_start_pixels: TilePosition,
+    pub clyde_start_pixels: TilePosition,
     pub pacman_start: TilePosition,
     pub fruit_start: TilePosition,
-    pub ghost_deny_up: &'static [TilePosition],
+    pub pacman_start_pixels: TilePosition,
+    pub fruit_start_pixels: TilePosition,
+    pub ghost_deny_up: [TilePosition; 4],
 }
 
 impl MazeSpec {
-    pub fn for_level(level: u32, allow_multiple_mazes: bool) -> Self {
-        if allow_multiple_mazes && level.is_multiple_of(2) {
-            maze2()
-        } else {
-            maze1()
-        }
+    pub fn for_level(_level: u32) -> Self {
+        maze1()
     }
 
     pub fn add_offset(self, x: f32, y: f32) -> (f32, f32) {
@@ -66,54 +65,174 @@ impl MazeSpec {
         (Direction::Right, self.inky_start(), GhostKind::Inky)
     }
 
+    pub fn pinky_start_restriction(self) -> (Direction, (f32, f32), GhostKind) {
+        (Direction::Up, self.pinky_start(), GhostKind::Pinky)
+    }
+
     pub fn clyde_start_restriction(self) -> (Direction, (f32, f32), GhostKind) {
         (Direction::Left, self.clyde_start(), GhostKind::Clyde)
     }
 }
 
 fn maze1() -> MazeSpec {
+    let metadata = maze1_metadata();
     MazeSpec {
         name: "maze1",
         layout: MAZE1,
-        rotation: MAZE1_ROTATION,
-        portal_pairs: &[((0.0, 17.0), (27.0, 17.0))],
-        home_offset: (11.5, 14.0),
-        home_connect_left: (12.0, 14.0),
-        home_connect_right: (15.0, 14.0),
-        pacman_start: (15.0, 26.0),
-        fruit_start: (9.0, 20.0),
-        ghost_deny_up: &[(12.0, 14.0), (15.0, 14.0), (12.0, 26.0), (15.0, 26.0)],
+        portal_pairs: [metadata.portal_pair],
+        home_offset: metadata.home_offset,
+        home_connect_left: metadata.home_connect_left,
+        home_connect_right: metadata.home_connect_right,
+        blinky_start_pixels: metadata.blinky_start_pixels,
+        pinky_start_pixels: metadata.pinky_start_pixels,
+        inky_start_pixels: metadata.inky_start_pixels,
+        clyde_start_pixels: metadata.clyde_start_pixels,
+        pacman_start: metadata.pacman_start,
+        fruit_start: metadata.fruit_start,
+        pacman_start_pixels: metadata.pacman_start_pixels,
+        fruit_start_pixels: metadata.fruit_start_pixels,
+        ghost_deny_up: metadata.ghost_deny_up,
     }
 }
 
-fn maze2() -> MazeSpec {
-    MazeSpec {
-        name: "maze2",
-        layout: MAZE2,
-        rotation: MAZE2_ROTATION,
-        portal_pairs: &[((0.0, 4.0), (27.0, 4.0)), ((0.0, 26.0), (27.0, 26.0))],
-        home_offset: (11.5, 14.0),
-        home_connect_left: (9.0, 14.0),
-        home_connect_right: (18.0, 14.0),
-        pacman_start: (16.0, 26.0),
-        fruit_start: (11.0, 20.0),
-        ghost_deny_up: &[(9.0, 14.0), (18.0, 14.0), (11.0, 23.0), (16.0, 23.0)],
+#[derive(Clone, Copy, Debug)]
+struct MazeMetadata {
+    portal_pair: PortalPair,
+    home_offset: TilePosition,
+    home_connect_left: TilePosition,
+    home_connect_right: TilePosition,
+    blinky_start_pixels: TilePosition,
+    pinky_start_pixels: TilePosition,
+    inky_start_pixels: TilePosition,
+    clyde_start_pixels: TilePosition,
+    pacman_start: TilePosition,
+    fruit_start: TilePosition,
+    pacman_start_pixels: TilePosition,
+    fruit_start_pixels: TilePosition,
+    ghost_deny_up: [TilePosition; 4],
+}
+
+fn maze1_metadata() -> MazeMetadata {
+    parse_maze_metadata(MAZE1_METADATA)
+}
+
+fn parse_maze_metadata(text: &str) -> MazeMetadata {
+    let mut portal_pair = None;
+    let mut home_offset = None;
+    let mut home_connect_left = None;
+    let mut home_connect_right = None;
+    let mut blinky_start_pixels = None;
+    let mut pinky_start_pixels = None;
+    let mut inky_start_pixels = None;
+    let mut clyde_start_pixels = None;
+    let mut pacman_start = None;
+    let mut fruit_start = None;
+    let mut pacman_start_pixels = None;
+    let mut fruit_start_pixels = None;
+    let mut ghost_deny_up = None;
+
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let (key, value) = line
+            .split_once('=')
+            .expect("maze metadata lines should use key=value");
+        match key {
+            "portal_pair" => portal_pair = Some(parse_portal_pair(value)),
+            "home_offset" => home_offset = Some(parse_position(value)),
+            "home_connect_left" => home_connect_left = Some(parse_position(value)),
+            "home_connect_right" => home_connect_right = Some(parse_position(value)),
+            "blinky_start_pixels" => blinky_start_pixels = Some(parse_position(value)),
+            "pinky_start_pixels" => pinky_start_pixels = Some(parse_position(value)),
+            "inky_start_pixels" => inky_start_pixels = Some(parse_position(value)),
+            "clyde_start_pixels" => clyde_start_pixels = Some(parse_position(value)),
+            "pacman_start" => pacman_start = Some(parse_position(value)),
+            "fruit_start" => fruit_start = Some(parse_position(value)),
+            "pacman_start_pixels" => pacman_start_pixels = Some(parse_position(value)),
+            "fruit_start_pixels" => fruit_start_pixels = Some(parse_position(value)),
+            "ghost_deny_up" => ghost_deny_up = Some(parse_position_list(value)),
+            _ => {}
+        }
     }
+
+    MazeMetadata {
+        portal_pair: portal_pair.expect("maze metadata should define portal_pair"),
+        home_offset: home_offset.expect("maze metadata should define home_offset"),
+        home_connect_left: home_connect_left
+            .expect("maze metadata should define home_connect_left"),
+        home_connect_right: home_connect_right
+            .expect("maze metadata should define home_connect_right"),
+        blinky_start_pixels: blinky_start_pixels
+            .expect("maze metadata should define blinky_start_pixels"),
+        pinky_start_pixels: pinky_start_pixels
+            .expect("maze metadata should define pinky_start_pixels"),
+        inky_start_pixels: inky_start_pixels
+            .expect("maze metadata should define inky_start_pixels"),
+        clyde_start_pixels: clyde_start_pixels
+            .expect("maze metadata should define clyde_start_pixels"),
+        pacman_start: pacman_start.expect("maze metadata should define pacman_start"),
+        fruit_start: fruit_start.expect("maze metadata should define fruit_start"),
+        pacman_start_pixels: pacman_start_pixels
+            .expect("maze metadata should define pacman_start_pixels"),
+        fruit_start_pixels: fruit_start_pixels
+            .expect("maze metadata should define fruit_start_pixels"),
+        ghost_deny_up: ghost_deny_up.expect("maze metadata should define ghost_deny_up"),
+    }
+}
+
+fn parse_portal_pair(value: &str) -> PortalPair {
+    let (left, right) = value
+        .split_once('|')
+        .expect("portal pairs should contain exactly two positions");
+    (parse_position(left), parse_position(right))
+}
+
+fn parse_position_list(value: &str) -> [TilePosition; 4] {
+    value
+        .split(';')
+        .map(parse_position)
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("maze metadata should provide four ghost deny-up positions")
+}
+
+fn parse_position(value: &str) -> TilePosition {
+    let (x, y) = value
+        .split_once(',')
+        .expect("positions should be encoded as x,y");
+    (
+        x.parse::<f32>().expect("position x should parse"),
+        y.parse::<f32>().expect("position y should parse"),
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::MazeSpec;
-
-    #[test]
-    fn maze_data_cycles_between_the_two_layouts() {
-        assert_eq!(MazeSpec::for_level(1, true).name, "maze1");
-        assert_eq!(MazeSpec::for_level(2, true).name, "maze2");
-        assert_eq!(MazeSpec::for_level(3, true).name, "maze1");
-    }
+    use super::{MazeSpec, maze1_metadata};
 
     #[test]
     fn single_maze_mode_stays_on_maze_one() {
-        assert_eq!(MazeSpec::for_level(2, false).name, "maze1");
+        assert_eq!(MazeSpec::for_level(1).name, "maze1");
+        assert_eq!(MazeSpec::for_level(2).name, "maze1");
+    }
+
+    #[test]
+    fn extracted_arcade_metadata_matches_expected_positions() {
+        let metadata = maze1_metadata();
+
+        assert_eq!(metadata.portal_pair, ((0.0, 17.0), (27.0, 17.0)));
+        assert_eq!(metadata.home_offset, (11.5, 14.0));
+        assert_eq!(metadata.home_connect_left, (12.0, 14.0));
+        assert_eq!(metadata.home_connect_right, (15.0, 14.0));
+        assert_eq!(metadata.blinky_start_pixels, (216.0, 224.0));
+        assert_eq!(metadata.pinky_start_pixels, (216.0, 272.0));
+        assert_eq!(metadata.inky_start_pixels, (184.0, 272.0));
+        assert_eq!(metadata.clyde_start_pixels, (248.0, 272.0));
+        assert_eq!(metadata.pacman_start, (15.0, 26.0));
+        assert_eq!(metadata.fruit_start, (15.0, 23.0));
+        assert_eq!(metadata.pacman_start_pixels, (216.0, 416.0));
+        assert_eq!(metadata.fruit_start_pixels, (216.0, 320.0));
+        assert_eq!(
+            metadata.ghost_deny_up,
+            [(12.0, 14.0), (15.0, 14.0), (12.0, 26.0), (15.0, 26.0)]
+        );
     }
 }

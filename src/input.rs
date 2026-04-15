@@ -59,15 +59,18 @@ pub struct InputController {
 
 impl InputController {
     pub fn poll(&mut self) -> Result<()> {
-        while event::poll(Duration::ZERO)? {
-            match event::read()? {
-                Event::Key(key_event) => self.handle_key(key_event),
-                Event::Mouse(mouse_event) => self.handle_mouse(mouse_event),
-                Event::Resize(_, _) => {}
-                _ => {}
-            }
+        self.poll_for(Duration::ZERO)
+    }
+
+    pub fn poll_for(&mut self, timeout: Duration) -> Result<()> {
+        if !event::poll(timeout)? {
+            return Ok(());
         }
 
+        self.handle_event(event::read()?);
+        while event::poll(Duration::ZERO)? {
+            self.handle_event(event::read()?);
+        }
         Ok(())
     }
 
@@ -97,6 +100,15 @@ impl InputController {
 
     pub fn take_typed_chars(&mut self) -> Vec<char> {
         std::mem::take(&mut self.typed_chars)
+    }
+
+    fn handle_event(&mut self, event: Event) {
+        match event {
+            Event::Key(key_event) => self.handle_key(key_event),
+            Event::Mouse(mouse_event) => self.handle_mouse(mouse_event),
+            Event::Resize(_, _) => {}
+            _ => {}
+        }
     }
 
     fn handle_key(&mut self, key_event: KeyEvent) {
