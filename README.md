@@ -4,7 +4,9 @@ This is a rust implmentation of Pacman rendered with Kitty graphics.
 
 ![PacMan](docs/pacman.png)
 
-![Start Sequence](docs/start-sequence.gif)
+<p align="center">
+  <img src="docs/start-sequence.gif" alt="Start Sequence" />
+</p>
 
 Run targets:
 
