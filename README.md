@@ -4,6 +4,8 @@ This is a rust implmentation of Pacman rendered with Kitty graphics.
 
 ![PacMan](docs/pacman.png)
 
+![Start Sequence](docs/start-sequence.gif)
+
 Run targets:
 
 - `cargo run`
