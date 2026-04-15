@@ -304,8 +304,9 @@ impl Ghost {
 
         self.prime_direction(nodes);
         self.frame_accumulator += dt;
-        while self.frame_accumulator >= ORIGINAL_FRAME_TIME {
-            self.frame_accumulator -= ORIGINAL_FRAME_TIME;
+        let frames = (self.frame_accumulator / ORIGINAL_FRAME_TIME) as usize;
+        self.frame_accumulator -= frames as f32 * ORIGINAL_FRAME_TIME;
+        for _ in 0..frames {
             let steps = self.frame_steps(nodes, context);
             for _ in 0..steps {
                 self.advance_position_step(nodes);
@@ -364,30 +365,34 @@ impl Ghost {
         elroy_enabled: bool,
     ) {
         let spec = level_spec(level);
-        let percent = if self.mode.current() == GhostMode::Spawn {
-            2.0
-        } else if self.in_tunnel(nodes) {
-            spec.ghost_tunnel_speed
-        } else {
-            match self.mode.current() {
-                GhostMode::Freight => spec.frightened_ghost_speed.unwrap_or(spec.ghost_speed),
-                GhostMode::Scatter | GhostMode::Chase => {
-                    if self.kind == GhostKind::Blinky && elroy_enabled {
-                        if dots_remaining <= spec.elroy_two_dots_left {
-                            spec.elroy_two_speed
-                        } else if dots_remaining <= spec.elroy_one_dots_left {
-                            spec.elroy_one_speed
-                        } else {
-                            spec.ghost_speed
-                        }
-                    } else {
-                        spec.ghost_speed
-                    }
-                }
-                GhostMode::Spawn => unreachable!(),
+        let percent = match self.mode.current() {
+            GhostMode::Spawn => 2.0,
+            _ if self.in_tunnel(nodes) => spec.ghost_tunnel_speed,
+            GhostMode::Freight => spec.frightened_ghost_speed.unwrap_or(spec.ghost_speed),
+            GhostMode::Scatter | GhostMode::Chase => {
+                self.normal_mode_speed(spec, dots_remaining, elroy_enabled)
             }
         };
         self.speed = PACMAN_SPEED * percent;
+    }
+
+    fn normal_mode_speed(
+        &self,
+        spec: crate::arcade::ArcadeLevelSpec,
+        dots_remaining: usize,
+        elroy_enabled: bool,
+    ) -> f32 {
+        if self.kind != GhostKind::Blinky || !elroy_enabled {
+            return spec.ghost_speed;
+        }
+
+        if dots_remaining <= spec.elroy_two_dots_left {
+            spec.elroy_two_speed
+        } else if dots_remaining <= spec.elroy_one_dots_left {
+            spec.elroy_one_speed
+        } else {
+            spec.ghost_speed
+        }
     }
 
     fn frame_steps(&mut self, nodes: &NodeGroup, context: GhostUpdateContext) -> usize {

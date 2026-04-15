@@ -93,3 +93,22 @@ fn pixel_size() -> (u16, u16) {
 fn pixel_size() -> (u16, u16) {
     (0, 0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{TerminalGeometry, pixel_size};
+
+    #[test]
+    fn pixel_size_returns_a_valid_pair() {
+        let (width, height) = pixel_size();
+        let geometry = TerminalGeometry {
+            cols: 1,
+            rows: 1,
+            pixel_width: width,
+            pixel_height: height,
+        };
+
+        assert_eq!(geometry.pixel_width, width);
+        assert_eq!(geometry.pixel_height, height);
+    }
+}

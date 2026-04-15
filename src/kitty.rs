@@ -131,8 +131,43 @@ fn encode_png_into(image: &RenderedImage, encoded: &mut Vec<u8>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CHUNK_SIZE, encode_png, is_known_kitty_graphics_terminal, validate_environment};
+    use std::{
+        env,
+        sync::{Mutex, OnceLock},
+    };
+
+    use super::{
+        CHUNK_SIZE, KittyGraphics, encode_png, is_known_kitty_graphics_terminal,
+        validate_environment,
+    };
     use crate::render::RenderedImage;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn with_env_vars<T>(vars: &[(&str, Option<&str>)], f: impl FnOnce() -> T) -> T {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        let previous = vars
+            .iter()
+            .map(|(key, _)| ((*key).to_string(), env::var_os(key)))
+            .collect::<Vec<_>>();
+        for (key, value) in vars {
+            match value {
+                Some(value) => unsafe { env::set_var(key, value) },
+                None => unsafe { env::remove_var(key) },
+            }
+        }
+        let result = f();
+        for (key, value) in previous {
+            match value {
+                Some(value) => unsafe { env::set_var(&key, value) },
+                None => unsafe { env::remove_var(&key) },
+            }
+        }
+        result
+    }
 
     #[test]
     fn png_encoder_writes_signature() {
@@ -167,5 +202,44 @@ mod tests {
     fn known_terminals_include_kitty() {
         assert!(is_known_kitty_graphics_terminal("xterm-kitty", ""));
         assert!(is_known_kitty_graphics_terminal("xterm-ghostty", "ghostty"));
+        assert!(is_known_kitty_graphics_terminal("", "WarpTerminal"));
+    }
+
+    #[test]
+    fn force_flag_bypasses_terminal_detection() {
+        with_env_vars(
+            &[
+                ("PACMAN_FORCE_KITTY", Some("1")),
+                ("TERM", Some("dumb")),
+                ("TERM_PROGRAM", None),
+            ],
+            || {
+                assert!(KittyGraphics::ensure_supported().is_ok());
+            },
+        );
+    }
+
+    #[test]
+    fn kitty_window_id_bypasses_terminal_detection() {
+        with_env_vars(
+            &[
+                ("PACMAN_FORCE_KITTY", None),
+                ("KITTY_WINDOW_ID", Some("123")),
+                ("TERM", Some("dumb")),
+                ("TERM_PROGRAM", None),
+            ],
+            || {
+                assert!(KittyGraphics::ensure_supported().is_ok());
+            },
+        );
+    }
+
+    #[test]
+    fn resize_updates_placement_dimensions() {
+        let mut graphics = KittyGraphics::new(10, 20);
+        graphics.resize(30, 40);
+
+        assert_eq!(graphics.placement_cols, 30);
+        assert_eq!(graphics.placement_rows, 40);
     }
 }

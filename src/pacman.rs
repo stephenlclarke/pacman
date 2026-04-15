@@ -166,8 +166,9 @@ impl NodePacman {
 
         self.prime_direction(requested_direction, nodes);
         self.frame_accumulator += dt;
-        while self.frame_accumulator >= ORIGINAL_FRAME_TIME {
-            self.frame_accumulator -= ORIGINAL_FRAME_TIME;
+        let steps = (self.frame_accumulator / ORIGINAL_FRAME_TIME) as usize;
+        self.frame_accumulator -= steps as f32 * ORIGINAL_FRAME_TIME;
+        for _ in 0..steps {
             if self.advance_move_pattern() {
                 self.update_reversible(requested_direction, nodes);
             }

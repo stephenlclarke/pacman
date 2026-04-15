@@ -14,7 +14,7 @@ use crate::{
     arcade::ORIGINAL_FRAME_TIME,
     audio::AudioManager,
     game::{Game, UpdateInput},
-    input::InputController,
+    input::{InputController, MouseCell},
     kitty::KittyGraphics,
     render::Renderer,
     terminal::{TerminalSession, geometry},
@@ -49,15 +49,9 @@ pub fn run() -> Result<()> {
 
     loop {
         let frame_started = Instant::now();
-        let latest_geometry = geometry()?;
-        if latest_geometry != terminal_geometry {
-            terminal_geometry = latest_geometry;
-            renderer.resize(terminal_geometry);
-            graphics.resize(terminal_geometry.cols, terminal_geometry.rows);
-        }
+        sync_terminal_geometry(&mut terminal_geometry, &mut renderer, &mut graphics)?;
 
-        input.poll()?;
-        if input.quit_requested() {
+        if poll_input(&mut input)? {
             break;
         }
 
@@ -67,63 +61,23 @@ pub fn run() -> Result<()> {
 
         merge_input(
             &mut pending_input,
-            UpdateInput {
-                requested_direction: input.direction(),
-                pause_requested: input.take_pause_requested(),
-                start_requested: input.take_start_requested(),
-                mouse_position: input.mouse_cell().and_then(|mouse_cell| {
-                    renderer.scene_position_for_terminal_cell(
-                        terminal_geometry,
-                        mouse_cell.column(),
-                        mouse_cell.row(),
-                    )
-                }),
-                mouse_click_position: input.take_mouse_click().and_then(|mouse_cell| {
-                    renderer.scene_position_for_terminal_cell(
-                        terminal_geometry,
-                        mouse_cell.column(),
-                        mouse_cell.row(),
-                    )
-                }),
-                typed_chars: input.take_typed_chars(),
-            },
+            collect_update_input(&mut input, &renderer, terminal_geometry),
         );
 
-        let mut first_step = true;
-        while accumulator >= frame_time {
-            let step_input = if first_step {
-                pending_input.clone()
-            } else {
-                step_input_without_one_shots(&pending_input)
-            };
-            game.update_with_input(frame_time, step_input);
-            accumulator -= frame_time;
-            first_step = false;
-            if game.quit_requested() {
-                break;
-            }
-        }
-        if !first_step {
-            clear_one_shots(&mut pending_input);
-        }
-        if game.quit_requested() {
+        if advance_game(&mut game, &mut pending_input, &mut accumulator, frame_time) {
             break;
         }
 
-        for event in game.drain_events() {
-            audio.handle_event(event);
-        }
-        let frame = game.frame();
-        let image = renderer.render(&frame);
-        graphics.draw_frame(&mut stdout, image)?;
-        stdout.flush()?;
+        render_frame(
+            &mut game,
+            &mut audio,
+            &mut renderer,
+            &mut graphics,
+            &mut stdout,
+        )?;
 
-        let elapsed = frame_started.elapsed();
-        if elapsed < frame_duration {
-            input.poll_for(frame_duration - elapsed)?;
-            if input.quit_requested() {
-                break;
-            }
+        if wait_for_next_frame(&mut input, frame_started, frame_duration)? {
+            break;
         }
     }
 
@@ -131,6 +85,117 @@ pub fn run() -> Result<()> {
     stdout.flush()?;
 
     Ok(())
+}
+
+fn sync_terminal_geometry(
+    terminal_geometry: &mut crate::terminal::TerminalGeometry,
+    renderer: &mut Renderer,
+    graphics: &mut KittyGraphics,
+) -> Result<()> {
+    let latest_geometry = geometry()?;
+    if latest_geometry != *terminal_geometry {
+        *terminal_geometry = latest_geometry;
+        renderer.resize(*terminal_geometry);
+        graphics.resize(terminal_geometry.cols, terminal_geometry.rows);
+    }
+    Ok(())
+}
+
+fn poll_input(input: &mut InputController) -> Result<bool> {
+    input.poll()?;
+    Ok(input.quit_requested())
+}
+
+fn collect_update_input(
+    input: &mut InputController,
+    renderer: &Renderer,
+    terminal_geometry: crate::terminal::TerminalGeometry,
+) -> UpdateInput {
+    UpdateInput {
+        requested_direction: input.direction(),
+        pause_requested: input.take_pause_requested(),
+        start_requested: input.take_start_requested(),
+        mouse_position: mouse_scene_position(input.mouse_cell(), renderer, terminal_geometry),
+        mouse_click_position: mouse_scene_position(
+            input.take_mouse_click(),
+            renderer,
+            terminal_geometry,
+        ),
+        typed_chars: input.take_typed_chars(),
+    }
+}
+
+fn mouse_scene_position(
+    mouse_cell: Option<MouseCell>,
+    renderer: &Renderer,
+    terminal_geometry: crate::terminal::TerminalGeometry,
+) -> Option<crate::vector::Vector2> {
+    mouse_cell.and_then(|mouse_cell| {
+        renderer.scene_position_for_terminal_cell(
+            terminal_geometry,
+            mouse_cell.column(),
+            mouse_cell.row(),
+        )
+    })
+}
+
+fn advance_game(
+    game: &mut Game,
+    pending_input: &mut UpdateInput,
+    accumulator: &mut f32,
+    frame_time: f32,
+) -> bool {
+    let steps = whole_steps(accumulator, frame_time);
+    for step_index in 0..steps {
+        let step_input = if step_index == 0 {
+            pending_input.clone()
+        } else {
+            step_input_without_one_shots(pending_input)
+        };
+        game.update_with_input(frame_time, step_input);
+        if game.quit_requested() {
+            return true;
+        }
+    }
+    if steps > 0 {
+        clear_one_shots(pending_input);
+    }
+    game.quit_requested()
+}
+
+fn whole_steps(accumulator: &mut f32, frame_time: f32) -> usize {
+    let steps = (*accumulator / frame_time) as usize;
+    *accumulator -= steps as f32 * frame_time;
+    steps
+}
+
+fn render_frame(
+    game: &mut Game,
+    audio: &mut AudioManager,
+    renderer: &mut Renderer,
+    graphics: &mut KittyGraphics,
+    stdout: &mut std::io::Stdout,
+) -> Result<()> {
+    for event in game.drain_events() {
+        audio.handle_event(event);
+    }
+    let frame = game.frame();
+    let image = renderer.render(&frame);
+    graphics.draw_frame(stdout, image)?;
+    stdout.flush()?;
+    Ok(())
+}
+
+fn wait_for_next_frame(
+    input: &mut InputController,
+    frame_started: Instant,
+    frame_duration: Duration,
+) -> Result<bool> {
+    let elapsed = frame_started.elapsed();
+    if elapsed < frame_duration {
+        input.poll_for(frame_duration - elapsed)?;
+    }
+    Ok(input.quit_requested())
 }
 
 fn merge_input(pending: &mut UpdateInput, next: UpdateInput) {

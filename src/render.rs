@@ -413,7 +413,7 @@ fn scale_to_fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u3
 
 #[cfg(test)]
 mod tests {
-    use super::{Circle, FrameData, Line, Renderer, SceneTransform};
+    use super::{Circle, FrameData, Line, RenderedImage, Renderer, SceneTransform, scale_to_fit};
     use crate::{
         constants::{SCREEN_HEIGHT, SCREEN_WIDTH},
         terminal::TerminalGeometry,
@@ -501,5 +501,88 @@ mod tests {
         let pixel = sample_pixel(&image.pixels, image.width, 120, 80);
 
         assert_eq!(pixel, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn rendered_image_resize_and_clear_reset_the_buffer() {
+        let mut image = RenderedImage::new_blank(2, 2);
+        image.clear(super::Color(1, 2, 3, 4));
+        image.resize(3, 1);
+
+        assert_eq!(image.width, 3);
+        assert_eq!(image.height, 1);
+        assert_eq!(image.pixels.len(), 12);
+    }
+
+    #[test]
+    fn draw_image_blends_alpha_and_ignores_transparent_pixels() {
+        let mut target = RenderedImage::new_blank(2, 1);
+        target.clear(super::Color(10, 20, 30, 255));
+        let image = RenderedImage {
+            width: 2,
+            height: 1,
+            pixels: vec![200, 100, 50, 128, 1, 2, 3, 0],
+        };
+
+        target.draw_image(&image, 0, 0, 2, 1);
+
+        assert_ne!(
+            sample_pixel(&target.pixels, target.width, 0, 0),
+            [10, 20, 30, 255]
+        );
+        assert_eq!(
+            sample_pixel(&target.pixels, target.width, 1, 0),
+            [10, 20, 30, 255]
+        );
+    }
+
+    #[test]
+    fn scene_position_returns_none_when_terminal_has_no_cells() {
+        let renderer = screen_renderer();
+        let scene = renderer.scene_position_for_terminal_cell(
+            TerminalGeometry {
+                cols: 0,
+                rows: 0,
+                pixel_width: SCREEN_WIDTH as u16,
+                pixel_height: SCREEN_HEIGHT as u16,
+            },
+            0,
+            0,
+        );
+
+        assert!(scene.is_none());
+    }
+
+    #[test]
+    fn scale_to_fit_honours_minimum_and_maximum_bounds() {
+        assert_eq!(
+            scale_to_fit(0, 0, SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2),
+            (SCREEN_WIDTH, SCREEN_HEIGHT)
+        );
+        assert_eq!(
+            scale_to_fit(
+                SCREEN_WIDTH * 4,
+                SCREEN_HEIGHT * 4,
+                SCREEN_WIDTH * 2,
+                SCREEN_HEIGHT * 2
+            ),
+            (SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2)
+        );
+    }
+
+    #[test]
+    fn centered_rect_offsets_by_half_the_scaled_size() {
+        let transform = SceneTransform::new(SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32);
+        let (x, y, width, height) = transform.rect(
+            Vector2::new(100.0, 50.0),
+            20.0,
+            10.0,
+            super::SpriteAnchor::Center,
+        );
+
+        assert_eq!(x, 90);
+        assert_eq!(y, 45);
+        assert_eq!(width, 20);
+        assert_eq!(height, 10);
     }
 }

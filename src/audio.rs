@@ -256,7 +256,23 @@ fn ensure_embedded_sound(sound: SoundAsset, path: &Path) -> std::io::Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::{SoundAsset, cached_sound_path, ensure_embedded_sound, sound_path};
+    use std::path::PathBuf;
+
+    use super::{LoopingAudio, SoundAsset, cached_sound_path, ensure_embedded_sound, sound_path};
+
+    fn all_assets() -> [SoundAsset; 9] {
+        [
+            SoundAsset::ButtonClick,
+            SoundAsset::Death,
+            SoundAsset::FreightMode,
+            SoundAsset::FruitEat,
+            SoundAsset::GhostEat,
+            SoundAsset::LevelComplete,
+            SoundAsset::LevelStart,
+            SoundAsset::Music,
+            SoundAsset::SmallPellet,
+        ]
+    }
 
     #[test]
     fn embedded_sound_cache_uses_the_temp_directory() {
@@ -290,5 +306,47 @@ mod tests {
                 .len(),
             SoundAsset::ButtonClick.bytes().len() as u64
         );
+    }
+
+    #[test]
+    fn every_embedded_sound_asset_has_bytes_and_a_cache_path() {
+        for sound in all_assets() {
+            let path = cached_sound_path(sound);
+            assert!(path.starts_with(std::env::temp_dir()));
+            assert_eq!(
+                path.file_name(),
+                Some(std::ffi::OsStr::new(sound.file_name()))
+            );
+            assert!(
+                !sound.bytes().is_empty(),
+                "asset {} should not be empty",
+                sound.file_name()
+            );
+        }
+    }
+
+    #[test]
+    fn every_embedded_sound_asset_can_be_materialized() {
+        for sound in all_assets() {
+            let path = sound_path(sound).unwrap_or_else(|| PathBuf::from(sound.file_name()));
+            assert!(
+                path.exists(),
+                "{} should be written to disk",
+                sound.file_name()
+            );
+            assert_eq!(
+                path.metadata()
+                    .expect("materialized sound should exist")
+                    .len(),
+                sound.bytes().len() as u64
+            );
+        }
+    }
+
+    #[test]
+    fn looping_audio_stop_is_safe_without_an_active_child() {
+        let mut looping = LoopingAudio::default();
+        looping.stop();
+        assert!(looping.stop.is_none());
     }
 }

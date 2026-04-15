@@ -68,6 +68,16 @@ struct RouteChoice {
     path: Vec<NodeId>,
 }
 
+struct RouteScoreInput<'a> {
+    variant: StartVariant,
+    target: NodeId,
+    path: &'a [NodeId],
+    route: &'a [(Vector2, Vector2)],
+    outcome: &'a SimOutcome,
+    fruit_bonus: f32,
+    allow_endgame_staging: bool,
+}
+
 #[derive(Clone, Debug)]
 struct PlannedRoute {
     path: Vec<NodeId>,
@@ -99,6 +109,12 @@ struct SimOutcome {
     freight_score: f32,
     preferred_freight_hits: usize,
     min_danger_distance: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GoalProgress {
+    Continue,
+    Reached,
 }
 
 struct Planner<'a> {
@@ -290,94 +306,182 @@ impl<'a> Planner<'a> {
         let path = search.path_to(target)?;
         let route = self.route_segments(variant, &path);
         let route_has_power_pellet = self.route_has_power_pellet(&route);
-        if route_has_power_pellet
-            && !allow_power_pellets
-            && self.remaining_normal_pellets() > 0
-            && !self.power_pellet_ready(&route)
-        {
+        if self.rejects_unready_power_pellet_route(
+            route_has_power_pellet,
+            &route,
+            allow_power_pellets,
+        ) {
             return None;
         }
 
-        let mut initial_pacman = self.pacman.clone();
-        if variant.reverse_now {
-            initial_pacman.update(0.0, initial_pacman.direction().opposite(), self.nodes);
-        }
+        let initial_pacman = self.initial_pacman_for(variant);
 
         let planned_direction = self.route_request(self.nodes, &initial_pacman, &path);
-        if initial_pacman.direction() != Direction::Stop
-            && planned_direction == initial_pacman.direction().opposite()
-        {
+        if self.immediate_reverse_rejected(&initial_pacman, planned_direction) {
             return None;
         }
 
         let outcome = self.simulate_path(variant, &path)?;
-        if self.pellets.len() <= 3 && (outcome.normal_pellets + outcome.power_pellets) == 0 {
+        let total_pellets_eaten = outcome.normal_pellets + outcome.power_pellets;
+        if self.pellets.len() <= 3 && total_pellets_eaten == 0 {
             return None;
         }
-        let fruit_bonus = if outcome.fruit_hit {
-            self.fruit
-                .map_or(0.0, |fruit| FRUIT_REWARD + fruit.points() as f32)
-        } else {
-            0.0
-        };
-        let rewardless_route = outcome.normal_pellets == 0
-            && outcome.power_pellets == 0
-            && outcome.freight_score == 0.0
-            && fruit_bonus == 0.0;
-        let allow_endgame_staging = rewardless_route
-            && self.pellets.len() <= ROUTE_COMMIT_PELLET_THRESHOLD
-            && self.pellets.len() > 2;
+        let fruit_bonus = self.fruit_bonus(&outcome);
+        let rewardless_route = self.rewardless_route(&outcome, fruit_bonus);
+        let allow_endgame_staging = self.allow_endgame_staging(rewardless_route);
 
-        if rewardless_route && !allow_endgame_staging {
+        if self.rejects_rewardless_route(rewardless_route, allow_endgame_staging) {
             return None;
         }
 
-        if route_has_power_pellet
-            && !allow_power_pellets
-            && self.remaining_normal_pellets() > 0
-            && outcome.freight_score == 0.0
-        {
+        if self.rejects_unproductive_power_pellet_route(
+            route_has_power_pellet,
+            allow_power_pellets,
+            &outcome,
+        ) {
             return None;
         }
 
-        let requested_direction = if variant.reverse_now {
-            self.pacman.direction().opposite()
-        } else {
-            planned_direction
-        };
+        let requested_direction = self.requested_direction_for(variant, planned_direction);
 
         if requested_direction == Direction::Stop {
             return None;
         }
 
-        let travel_tiles = outcome.travel_time * self.nominal_pacman_speed() / TILE_WIDTH as f32;
-        let pellet_reward = outcome.normal_pellets as f32 * NORMAL_PELLET_REWARD
-            + outcome.power_pellets as f32 * POWER_PELLET_REWARD;
-        let reverse_cost = if variant.reverse_now {
+        let score = self.score_route(RouteScoreInput {
+            variant,
+            target,
+            path: &path,
+            route: &route,
+            outcome: &outcome,
+            fruit_bonus,
+            allow_endgame_staging,
+        });
+
+        Some(RouteChoice {
+            requested_direction,
+            score,
+            path,
+        })
+    }
+
+    fn rejects_unready_power_pellet_route(
+        &self,
+        route_has_power_pellet: bool,
+        route: &[(Vector2, Vector2)],
+        allow_power_pellets: bool,
+    ) -> bool {
+        route_has_power_pellet
+            && !allow_power_pellets
+            && self.remaining_normal_pellets() > 0
+            && !self.power_pellet_ready(route)
+    }
+
+    fn initial_pacman_for(&self, variant: StartVariant) -> NodePacman {
+        let mut initial_pacman = self.pacman.clone();
+        if variant.reverse_now {
+            initial_pacman.update(0.0, initial_pacman.direction().opposite(), self.nodes);
+        }
+        initial_pacman
+    }
+
+    fn immediate_reverse_rejected(
+        &self,
+        initial_pacman: &NodePacman,
+        planned_direction: Direction,
+    ) -> bool {
+        initial_pacman.direction() != Direction::Stop
+            && planned_direction == initial_pacman.direction().opposite()
+    }
+
+    fn fruit_bonus(&self, outcome: &SimOutcome) -> f32 {
+        if outcome.fruit_hit {
+            self.fruit
+                .map_or(0.0, |fruit| FRUIT_REWARD + fruit.points() as f32)
+        } else {
+            0.0
+        }
+    }
+
+    fn rewardless_route(&self, outcome: &SimOutcome, fruit_bonus: f32) -> bool {
+        outcome.normal_pellets == 0
+            && outcome.power_pellets == 0
+            && outcome.freight_score == 0.0
+            && fruit_bonus == 0.0
+    }
+
+    fn allow_endgame_staging(&self, rewardless_route: bool) -> bool {
+        rewardless_route
+            && self.pellets.len() <= ROUTE_COMMIT_PELLET_THRESHOLD
+            && self.pellets.len() > 2
+    }
+
+    fn rejects_rewardless_route(
+        &self,
+        rewardless_route: bool,
+        allow_endgame_staging: bool,
+    ) -> bool {
+        rewardless_route && !allow_endgame_staging
+    }
+
+    fn rejects_unproductive_power_pellet_route(
+        &self,
+        route_has_power_pellet: bool,
+        allow_power_pellets: bool,
+        outcome: &SimOutcome,
+    ) -> bool {
+        route_has_power_pellet
+            && !allow_power_pellets
+            && self.remaining_normal_pellets() > 0
+            && outcome.freight_score == 0.0
+    }
+
+    fn requested_direction_for(
+        &self,
+        variant: StartVariant,
+        planned_direction: Direction,
+    ) -> Direction {
+        if variant.reverse_now {
+            self.pacman.direction().opposite()
+        } else {
+            planned_direction
+        }
+    }
+
+    fn score_route(&self, input: RouteScoreInput<'_>) -> f32 {
+        let travel_tiles =
+            input.outcome.travel_time * self.nominal_pacman_speed() / TILE_WIDTH as f32;
+        let pellet_reward = input.outcome.normal_pellets as f32 * NORMAL_PELLET_REWARD
+            + input.outcome.power_pellets as f32 * POWER_PELLET_REWARD;
+        let reverse_cost = if input.variant.reverse_now {
             REVERSE_COST
         } else {
             0.0
         };
-        let safety_bonus = (outcome.min_danger_distance.min(TILE_WIDTH as f32 * 12.0)
+        let safety_bonus = (input
+            .outcome
+            .min_danger_distance
+            .min(TILE_WIDTH as f32 * 12.0)
             / TILE_WIDTH as f32)
             * SAFETY_REWARD_SCALE;
-        let staging_bonus = if allow_endgame_staging {
-            self.endgame_staging_bonus(target)
+        let staging_bonus = if input.allow_endgame_staging {
+            self.endgame_staging_bonus(input.target)
         } else {
             0.0
         };
-        let cleanup_bonus = self.cleanup_bonus(&route, target);
-        let level_clear_bonus = ((outcome.normal_pellets + outcome.power_pellets)
+        let cleanup_bonus = self.cleanup_bonus(input.route, input.target);
+        let level_clear_bonus = ((input.outcome.normal_pellets + input.outcome.power_pellets)
             == self.pellets.len()) as u8 as f32
             * LEVEL_CLEAR_BONUS;
-        let tunnel_bonus = self.tunnel_escape_bonus(&path);
+        let tunnel_bonus = self.tunnel_escape_bonus(input.path);
         let preferred_freight_bonus =
-            outcome.preferred_freight_hits as f32 * PREFERRED_FREIGHT_KIND_BONUS;
-        let roundup_bonus = self.power_pellet_roundup_bonus(&route);
-        let trap_penalty = self.target_trap_penalty(target);
-        let score = pellet_reward
-            + fruit_bonus
-            + outcome.freight_score
+            input.outcome.preferred_freight_hits as f32 * PREFERRED_FREIGHT_KIND_BONUS;
+        let roundup_bonus = self.power_pellet_roundup_bonus(input.route);
+        let trap_penalty = self.target_trap_penalty(input.target);
+
+        pellet_reward
+            + input.fruit_bonus
+            + input.outcome.freight_score
             + safety_bonus
             + staging_bonus
             + cleanup_bonus
@@ -387,13 +491,7 @@ impl<'a> Planner<'a> {
             + roundup_bonus
             - travel_tiles * TRAVEL_COST_SCALE
             - reverse_cost
-            - trap_penalty;
-
-        Some(RouteChoice {
-            requested_direction,
-            score,
-            path,
-        })
+            - trap_penalty
     }
 
     fn safest_fallback_direction(&self) -> Direction {
@@ -941,50 +1039,18 @@ impl<'a> Planner<'a> {
         let _rng_guard = PreserveRng::new();
 
         for _ in 0..max_steps {
-            ghosts.update(
-                SIMULATION_DT,
-                &nodes,
-                GhostGroupUpdateContext {
-                    pacman_position: pacman.position(),
-                    pacman_direction: pacman.direction(),
-                    level: self.level,
-                    dots_remaining: pellets.len(),
-                    elroy_enabled: self.elroy_enabled,
-                },
-            );
-
-            if let Some(current_fruit) = &mut fruit {
-                current_fruit.update(SIMULATION_DT);
-                if current_fruit.destroyed() {
-                    fruit = None;
-                }
-            }
-
-            if let Some(pellet) = pellets.try_eat(pacman.position(), pacman.collide_radius()) {
-                match pellet.kind() {
-                    PelletKind::Pellet => outcome.normal_pellets += 1,
-                    PelletKind::PowerPellet => {
-                        outcome.power_pellets += 1;
-                        ghosts.start_freight();
-                    }
-                }
-            }
-
-            if !self.resolve_simulated_ghost_collision(
+            if !self.update_simulated_world(
                 &mut nodes,
                 &pacman,
                 &mut ghosts,
+                &mut pellets,
+                &mut fruit,
                 &mut outcome,
             ) {
                 return None;
             }
 
-            if let Some(current_fruit) = &fruit
-                && pacman.collide_check(current_fruit.position(), current_fruit.collide_radius())
-            {
-                outcome.fruit_hit = true;
-                fruit = None;
-            }
+            self.collect_simulated_fruit(&pacman, &mut fruit, &mut outcome);
 
             outcome.min_danger_distance =
                 outcome
@@ -994,13 +1060,15 @@ impl<'a> Planner<'a> {
                         pacman.position(),
                     ));
 
-            if let Some(goal_time) = reached_goal_at {
-                if elapsed >= goal_time + SETTLE_TIME {
-                    outcome.travel_time = goal_time;
-                    return Some(outcome);
-                }
+            if let Some(completed) =
+                Self::settled_goal_outcome(&mut outcome, reached_goal_at, elapsed)
+            {
+                return Some(completed);
+            }
 
-                elapsed += SIMULATION_DT;
+            if Self::advance_if_goal_settling(reached_goal_at, &mut elapsed)
+                == GoalProgress::Reached
+            {
                 continue;
             }
 
@@ -1015,6 +1083,105 @@ impl<'a> Planner<'a> {
         }
 
         None
+    }
+
+    fn update_simulated_world(
+        &self,
+        nodes: &mut NodeGroup,
+        pacman: &NodePacman,
+        ghosts: &mut GhostGroup,
+        pellets: &mut PelletGroup,
+        fruit: &mut Option<Fruit>,
+        outcome: &mut SimOutcome,
+    ) -> bool {
+        self.update_simulated_ghosts(ghosts, pacman, pellets.len(), nodes);
+        self.update_simulated_fruit(fruit);
+        self.collect_simulated_pellet(pellets, pacman, ghosts, outcome);
+        self.resolve_simulated_ghost_collision(nodes, pacman, ghosts, outcome)
+    }
+
+    fn update_simulated_ghosts(
+        &self,
+        ghosts: &mut GhostGroup,
+        pacman: &NodePacman,
+        dots_remaining: usize,
+        nodes: &NodeGroup,
+    ) {
+        ghosts.update(
+            SIMULATION_DT,
+            nodes,
+            GhostGroupUpdateContext {
+                pacman_position: pacman.position(),
+                pacman_direction: pacman.direction(),
+                level: self.level,
+                dots_remaining,
+                elroy_enabled: self.elroy_enabled,
+            },
+        );
+    }
+
+    fn update_simulated_fruit(&self, fruit: &mut Option<Fruit>) {
+        if let Some(current_fruit) = fruit {
+            current_fruit.update(SIMULATION_DT);
+            if current_fruit.destroyed() {
+                *fruit = None;
+            }
+        }
+    }
+
+    fn collect_simulated_pellet(
+        &self,
+        pellets: &mut PelletGroup,
+        pacman: &NodePacman,
+        ghosts: &mut GhostGroup,
+        outcome: &mut SimOutcome,
+    ) {
+        if let Some(pellet) = pellets.try_eat(pacman.position(), pacman.collide_radius()) {
+            match pellet.kind() {
+                PelletKind::Pellet => outcome.normal_pellets += 1,
+                PelletKind::PowerPellet => {
+                    outcome.power_pellets += 1;
+                    ghosts.start_freight();
+                }
+            }
+        }
+    }
+
+    fn collect_simulated_fruit(
+        &self,
+        pacman: &NodePacman,
+        fruit: &mut Option<Fruit>,
+        outcome: &mut SimOutcome,
+    ) {
+        if let Some(current_fruit) = fruit
+            && pacman.collide_check(current_fruit.position(), current_fruit.collide_radius())
+        {
+            outcome.fruit_hit = true;
+            *fruit = None;
+        }
+    }
+
+    fn settled_goal_outcome(
+        outcome: &mut SimOutcome,
+        reached_goal_at: Option<f32>,
+        elapsed: f32,
+    ) -> Option<SimOutcome> {
+        let goal_time = reached_goal_at?;
+        if elapsed < goal_time + SETTLE_TIME {
+            return None;
+        }
+
+        outcome.travel_time = goal_time;
+        Some(*outcome)
+    }
+
+    fn advance_if_goal_settling(reached_goal_at: Option<f32>, elapsed: &mut f32) -> GoalProgress {
+        if reached_goal_at.is_none() {
+            return GoalProgress::Continue;
+        }
+
+        *elapsed += SIMULATION_DT;
+        GoalProgress::Reached
     }
 
     fn route_segments_from_state(

@@ -464,91 +464,21 @@ impl GameplayState {
         pause_requested: bool,
         typed_chars: &[char],
     ) {
-        let mut requested_direction = requested_direction;
         let freight_was_active = self.ghosts.has_freight_mode();
-        self.handle_easter_egg_input(typed_chars);
-        self.easter_egg_blink.update(dt);
-        self.text_group.update(dt);
-        self.pellets.update(dt);
+        self.update_ui(dt, typed_chars);
 
         if !self.pause.paused() {
-            self.tick_ghost_release_timer(dt);
-            self.sustain_secret_freight_mode();
-
-            if self.pacman.alive() {
-                if self.easter_egg_autopilot.active() {
-                    requested_direction = self.easter_egg_autopilot.choose_direction(
-                        &self.nodes,
-                        &self.pacman,
-                        &self.pellets,
-                        &self.ghosts,
-                        self.fruit.as_ref(),
-                        AutoPilotContext {
-                            level: self.level,
-                            elroy_enabled: !self.elroy_suspended,
-                        },
-                    );
-                }
-                self.update_pacman_motion(dt, requested_direction);
-                #[cfg(test)]
-                {
-                    self.last_pacman_sprite_direction = self.pacman.direction();
-                }
-                self.pacman_sprites
-                    .update_for_state(dt, self.pacman.direction(), true);
-            }
-
-            self.ghosts.update(
-                dt,
-                &self.nodes,
-                GhostGroupUpdateContext {
-                    pacman_position: self.pacman.position(),
-                    pacman_direction: self.pacman.direction(),
-                    level: self.level,
-                    dots_remaining: self.pellets.len(),
-                    elroy_enabled: !self.elroy_suspended,
-                },
-            );
-
-            if let Some(fruit) = &mut self.fruit {
-                fruit.update(dt);
-            }
-
-            self.check_pellet_events();
-            self.check_ghost_events();
-            self.check_fruit_events();
+            self.update_live_entities(dt, requested_direction);
         }
 
-        if !self.pacman.alive() {
-            self.pacman_sprites
-                .update_for_state(dt, self.pacman.direction(), false);
-        }
-
-        if self.flash_background {
-            self.flash_timer += dt;
-            if self.flash_timer >= Self::FLASH_TIME {
-                self.flash_timer = 0.0;
-                if Arc::ptr_eq(&self.background, &self.background_norm) {
-                    self.background = self.background_flash.clone();
-                } else {
-                    self.background = self.background_norm.clone();
-                }
-            }
-        }
+        self.update_pacman_animation(dt);
+        self.update_background_flash(dt);
 
         if let Some(action) = self.pause.update(dt) {
             self.handle_after_pause(action);
         }
 
-        if pause_requested && self.pacman.alive() && !self.pause.is_timed() {
-            if self.pause.toggle() {
-                self.text_group.show_status(StatusText::Paused);
-                self.hide_entities();
-            } else {
-                self.text_group.hide_status();
-                self.show_entities();
-            }
-        }
+        self.handle_pause_request(pause_requested);
 
         self.sync_freight_events(freight_was_active);
     }
@@ -603,6 +533,114 @@ impl GameplayState {
         }
 
         self.sync_freight_events(freight_was_active);
+    }
+
+    fn update_ui(&mut self, dt: f32, typed_chars: &[char]) {
+        self.handle_easter_egg_input(typed_chars);
+        self.easter_egg_blink.update(dt);
+        self.text_group.update(dt);
+        self.pellets.update(dt);
+    }
+
+    fn update_live_entities(&mut self, dt: f32, requested_direction: Direction) {
+        self.tick_ghost_release_timer(dt);
+        self.sustain_secret_freight_mode();
+
+        let requested_direction = self.autopilot_direction(requested_direction);
+        if self.pacman.alive() {
+            self.update_pacman_motion(dt, requested_direction);
+        }
+
+        self.update_ghosts(dt);
+        self.update_fruit(dt);
+        self.check_pellet_events();
+        self.check_ghost_events();
+        self.check_fruit_events();
+    }
+
+    fn autopilot_direction(&mut self, requested_direction: Direction) -> Direction {
+        if !self.pacman.alive() || !self.easter_egg_autopilot.active() {
+            return requested_direction;
+        }
+
+        self.easter_egg_autopilot.choose_direction(
+            &self.nodes,
+            &self.pacman,
+            &self.pellets,
+            &self.ghosts,
+            self.fruit.as_ref(),
+            AutoPilotContext {
+                level: self.level,
+                elroy_enabled: !self.elroy_suspended,
+            },
+        )
+    }
+
+    fn update_pacman_animation(&mut self, dt: f32) {
+        if !self.pacman.alive() {
+            self.pacman_sprites
+                .update_for_state(dt, self.pacman.direction(), false);
+            return;
+        }
+
+        #[cfg(test)]
+        {
+            self.last_pacman_sprite_direction = self.pacman.direction();
+        }
+        self.pacman_sprites
+            .update_for_state(dt, self.pacman.direction(), true);
+    }
+
+    fn update_ghosts(&mut self, dt: f32) {
+        self.ghosts.update(
+            dt,
+            &self.nodes,
+            GhostGroupUpdateContext {
+                pacman_position: self.pacman.position(),
+                pacman_direction: self.pacman.direction(),
+                level: self.level,
+                dots_remaining: self.pellets.len(),
+                elroy_enabled: !self.elroy_suspended,
+            },
+        );
+    }
+
+    fn update_fruit(&mut self, dt: f32) {
+        if let Some(fruit) = &mut self.fruit {
+            fruit.update(dt);
+        }
+    }
+
+    fn update_background_flash(&mut self, dt: f32) {
+        if !self.flash_background {
+            return;
+        }
+
+        self.flash_timer += dt;
+        if self.flash_timer < Self::FLASH_TIME {
+            return;
+        }
+
+        self.flash_timer = 0.0;
+        if Arc::ptr_eq(&self.background, &self.background_norm) {
+            self.background = self.background_flash.clone();
+        } else {
+            self.background = self.background_norm.clone();
+        }
+    }
+
+    fn handle_pause_request(&mut self, pause_requested: bool) {
+        if !pause_requested || !self.pacman.alive() || self.pause.is_timed() {
+            return;
+        }
+
+        if self.pause.toggle() {
+            self.text_group.show_status(StatusText::Paused);
+            self.hide_entities();
+        } else {
+            self.text_group.hide_status();
+            self.show_entities();
+        }
     }
 
     fn drain_events(&mut self) -> Vec<GameEvent> {
@@ -1439,6 +1477,8 @@ impl TitleButtonState {
 }
 
 impl TitleAttractScene {
+    const SCENE_COUNT: usize = 3;
+
     const fn duration(self) -> f32 {
         match self {
             Self::Title => 6.0,
@@ -1513,8 +1553,12 @@ impl TitleScreenState {
         self.button.set_mouse_position(mouse_position);
         self.update_prompt_blink(dt);
         self.scene_timer += dt;
-        while self.scene_timer >= self.scene.duration() {
-            self.scene_timer -= self.scene.duration();
+        for _ in 0..TitleAttractScene::SCENE_COUNT {
+            let duration = self.scene.duration();
+            if self.scene_timer < duration {
+                break;
+            }
+            self.scene_timer -= duration;
             self.scene = self.scene.next();
             self.on_scene_changed();
         }
@@ -1549,8 +1593,9 @@ impl TitleScreenState {
         }
 
         self.prompt_blink_timer += dt;
-        while self.prompt_blink_timer >= 0.35 {
-            self.prompt_blink_timer -= 0.35;
+        let toggles = (self.prompt_blink_timer / 0.35) as usize;
+        self.prompt_blink_timer -= toggles as f32 * 0.35;
+        if toggles % 2 == 1 {
             self.prompt_visible = !self.prompt_visible;
         }
     }
