@@ -267,8 +267,21 @@ Controls:
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_one_shots, merge_input, parse_args, step_input_without_one_shots};
-    use crate::{game::UpdateInput, pacman::Direction, vector::Vector2};
+    use std::time::{Duration, Instant};
+
+    use super::{
+        advance_game, clear_one_shots, merge_input, mouse_scene_position, parse_args,
+        step_input_without_one_shots, wait_for_next_frame, whole_steps,
+    };
+    use crate::{
+        arcade::ORIGINAL_FRAME_TIME,
+        game::{Game, UpdateInput},
+        input::InputController,
+        pacman::Direction,
+        render::Renderer,
+        terminal::TerminalGeometry,
+        vector::Vector2,
+    };
 
     #[test]
     fn no_arguments_launch_the_default_game() {
@@ -373,5 +386,96 @@ mod tests {
         assert!(pending.typed_chars.is_empty());
         assert!(!pending.pause_requested);
         assert!(!pending.start_requested);
+    }
+
+    #[test]
+    fn whole_steps_consumes_complete_frames_and_preserves_remainder() {
+        let mut accumulator = ORIGINAL_FRAME_TIME * 2.5;
+
+        let steps = whole_steps(&mut accumulator, ORIGINAL_FRAME_TIME);
+
+        assert_eq!(steps, 2);
+        assert!((accumulator - ORIGINAL_FRAME_TIME * 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn advance_game_clears_one_shots_after_processing_steps() {
+        let mut game = Game::new();
+        let mut pending = UpdateInput {
+            requested_direction: Direction::Left,
+            pause_requested: true,
+            start_requested: true,
+            mouse_position: Some(Vector2::new(4.0, 5.0)),
+            mouse_click_position: Some(Vector2::new(6.0, 7.0)),
+            typed_chars: vec!['x'],
+        };
+        let mut accumulator = ORIGINAL_FRAME_TIME * 2.25;
+
+        let quit = advance_game(
+            &mut game,
+            &mut pending,
+            &mut accumulator,
+            ORIGINAL_FRAME_TIME,
+        );
+
+        assert!(!quit);
+        assert_eq!(pending.requested_direction, Direction::Left);
+        assert_eq!(pending.mouse_position, Some(Vector2::new(4.0, 5.0)));
+        assert!(!pending.pause_requested);
+        assert!(!pending.start_requested);
+        assert!(pending.mouse_click_position.is_none());
+        assert!(pending.typed_chars.is_empty());
+        assert!((accumulator - ORIGINAL_FRAME_TIME * 0.25).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn mouse_scene_position_projects_terminal_cells_into_scene_coordinates() {
+        let geometry = TerminalGeometry {
+            cols: 80,
+            rows: 30,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let renderer = Renderer::new(geometry);
+
+        let scene_position = mouse_scene_position(
+            Some(crate::input::MouseCell::default()),
+            &renderer,
+            geometry,
+        );
+
+        assert!(scene_position.is_some());
+    }
+
+    #[test]
+    fn mouse_scene_position_returns_none_for_empty_terminal_geometry() {
+        let geometry = TerminalGeometry {
+            cols: 0,
+            rows: 0,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let renderer = Renderer::new(geometry);
+
+        let scene_position = mouse_scene_position(
+            Some(crate::input::MouseCell::default()),
+            &renderer,
+            geometry,
+        );
+
+        assert!(scene_position.is_none());
+    }
+
+    #[test]
+    fn wait_for_next_frame_returns_current_quit_state_when_frame_is_elapsed() {
+        let mut input = InputController::default();
+        let frame_started = Instant::now()
+            .checked_sub(Duration::from_millis(5))
+            .expect("instant subtraction should succeed");
+
+        let quit = wait_for_next_frame(&mut input, frame_started, Duration::ZERO)
+            .expect("waiting should succeed");
+
+        assert!(!quit);
     }
 }
