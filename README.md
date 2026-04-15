@@ -1,5 +1,20 @@
 # PacMan
 
+
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=bugs)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=coverage)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
+
+---
+
 This is a rust implmentation of Pacman rendered with Kitty graphics.
 
 ![PacMan](docs/pacman.png)
