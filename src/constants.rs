@@ -5,11 +5,10 @@ pub const NCOLS: u32 = 28;
 pub const SCREEN_WIDTH: u32 = NCOLS * TILE_WIDTH;
 pub const SCREEN_HEIGHT: u32 = NROWS * TILE_HEIGHT;
 
-pub const PACMAN_START_X: f32 = 200.0;
-pub const PACMAN_START_Y: f32 = 400.0;
 pub const PACMAN_RADIUS: f32 = 10.0;
 pub const PACMAN_COLLIDE_RADIUS: f32 = 5.0;
 pub const PACMAN_SPEED: f32 = 100.0 * TILE_WIDTH as f32 / 16.0;
+pub const ARCADE_PIXEL_STEP: f32 = TILE_WIDTH as f32 / 8.0;
 pub const PELLET_RADIUS: f32 = 2.0 * TILE_WIDTH as f32 / 16.0;
 pub const POWER_PELLET_RADIUS: f32 = 8.0 * TILE_WIDTH as f32 / 16.0;
 pub const POWER_PELLET_FLASH_TIME: f32 = 0.2;

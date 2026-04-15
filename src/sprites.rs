@@ -7,32 +7,39 @@ use anyhow::Context;
 use png::{ColorType, Decoder, Transformations};
 
 use crate::{
-    actors::GhostKind,
-    animation::Animator,
-    constants::{BLACK, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_HEIGHT, TILE_WIDTH},
-    modes::GhostMode,
-    pacman::Direction,
+    actors::GhostKind, animation::Animator, arcade, modes::GhostMode, pacman::Direction,
     render::RenderedImage,
 };
 
-const SPRITESHEET_BYTES: &[u8] = include_bytes!("../assets/spritesheet.png");
-const MAZE_FILE: &str = include_str!("../assets/maze1.txt");
-const MAZE_ROTATIONS: &str = include_str!("../assets/maze1_rotation.txt");
-const FRUIT_TILE_POSITIONS: [(u32, u32); 6] =
-    [(16, 8), (18, 8), (20, 8), (16, 10), (18, 10), (20, 10)];
-const FLASH_BACKGROUND_ROW: u32 = 5;
-
 #[derive(Clone, Debug)]
-struct SpriteSheet {
-    image: RenderedImage,
+struct ArcadeActorAssets {
+    pacman_left: Arc<RenderedImage>,
+    pacman_right: Arc<RenderedImage>,
+    pacman_up: Arc<RenderedImage>,
+    pacman_down: Arc<RenderedImage>,
+    pacman_closed: Arc<RenderedImage>,
+    pacman_death: [Arc<RenderedImage>; 11],
+    ghost_left: [Arc<RenderedImage>; 4],
+    ghost_down: [Arc<RenderedImage>; 4],
+    ghost_right: [Arc<RenderedImage>; 4],
+    ghost_up: [Arc<RenderedImage>; 4],
+    ghost_eyes_up: Arc<RenderedImage>,
+    ghost_eyes_down: Arc<RenderedImage>,
+    ghost_eyes_left: Arc<RenderedImage>,
+    ghost_eyes_right: Arc<RenderedImage>,
+    ghost_freight: [Arc<RenderedImage>; 2],
+    ghost_freight_flash: [Arc<RenderedImage>; 2],
+    fruit_items: [Arc<RenderedImage>; 8],
+    fruit_icons: [Arc<RenderedImage>; 8],
 }
 
 #[derive(Clone, Debug)]
 pub struct PacmanSprites {
-    left: Animator<Arc<RenderedImage>>,
-    right: Animator<Arc<RenderedImage>>,
-    up: Animator<Arc<RenderedImage>>,
-    down: Animator<Arc<RenderedImage>>,
+    left: Arc<RenderedImage>,
+    right: Arc<RenderedImage>,
+    up: Arc<RenderedImage>,
+    down: Arc<RenderedImage>,
+    closed: Arc<RenderedImage>,
     death: Animator<Arc<RenderedImage>>,
     stop_left: Arc<RenderedImage>,
     stop_right: Arc<RenderedImage>,
@@ -40,6 +47,8 @@ pub struct PacmanSprites {
     stop_down: Arc<RenderedImage>,
     stop_image: Arc<RenderedImage>,
     current: Arc<RenderedImage>,
+    chomp_dt: f32,
+    chomp_open: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -53,12 +62,14 @@ pub struct GhostSprites {
     spawn_down: Arc<RenderedImage>,
     spawn_left: Arc<RenderedImage>,
     spawn_right: Arc<RenderedImage>,
-    freight: Arc<RenderedImage>,
+    freight: [Arc<RenderedImage>; 2],
+    freight_flash: [Arc<RenderedImage>; 2],
 }
 
 #[derive(Clone, Debug)]
 pub struct FruitSprites {
-    images: [Arc<RenderedImage>; 6],
+    items: [Arc<RenderedImage>; 8],
+    icons: [Arc<RenderedImage>; 8],
 }
 
 #[derive(Clone, Debug)]
@@ -69,83 +80,43 @@ pub struct LifeSprites {
 
 #[derive(Clone, Debug)]
 pub struct MazeSprites {
-    data: Vec<Vec<char>>,
-    rotations: Vec<Vec<char>>,
+    background: Arc<RenderedImage>,
+    flash_background: Arc<RenderedImage>,
 }
 
 impl PacmanSprites {
     pub fn new() -> Self {
-        let sheet = shared_sheet();
-        let stop_left = sheet.crop(8, 0, 2, 2);
-        let stop_right = sheet.crop(10, 0, 2, 2);
-        let stop_up = sheet.crop(10, 2, 2, 2);
-        let stop_down = sheet.crop(8, 2, 2, 2);
+        let assets = shared_arcade_assets();
+        let stop_left = assets.pacman_left.clone();
+        let stop_right = assets.pacman_right.clone();
+        let stop_up = assets.pacman_up.clone();
+        let stop_down = assets.pacman_down.clone();
+        let closed = assets.pacman_closed.clone();
 
         Self {
-            left: Animator::new(
-                vec![
-                    stop_left.clone(),
-                    sheet.crop(0, 0, 2, 2),
-                    sheet.crop(0, 2, 2, 2),
-                    sheet.crop(0, 0, 2, 2),
-                ],
-                20.0,
-                true,
-            ),
-            right: Animator::new(
-                vec![
-                    stop_right.clone(),
-                    sheet.crop(2, 0, 2, 2),
-                    sheet.crop(2, 2, 2, 2),
-                    sheet.crop(2, 0, 2, 2),
-                ],
-                20.0,
-                true,
-            ),
-            up: Animator::new(
-                vec![
-                    stop_up.clone(),
-                    sheet.crop(6, 0, 2, 2),
-                    sheet.crop(6, 2, 2, 2),
-                    sheet.crop(6, 0, 2, 2),
-                ],
-                20.0,
-                true,
-            ),
-            down: Animator::new(
-                vec![
-                    stop_down.clone(),
-                    sheet.crop(4, 0, 2, 2),
-                    sheet.crop(4, 2, 2, 2),
-                    sheet.crop(4, 0, 2, 2),
-                ],
-                20.0,
-                true,
-            ),
-            death: Animator::new(
-                (0..=10)
-                    .map(|index| sheet.crop(index * 2, 12, 2, 2))
-                    .collect(),
-                6.0,
-                false,
-            ),
+            left: stop_left.clone(),
+            right: stop_right.clone(),
+            up: stop_up.clone(),
+            down: stop_down.clone(),
+            closed: closed.clone(),
+            death: Animator::new(assets.pacman_death.to_vec(), 6.0, false),
             stop_left: stop_left.clone(),
             stop_right,
             stop_up,
             stop_down,
             stop_image: stop_left.clone(),
             current: stop_left,
+            chomp_dt: 0.0,
+            chomp_open: false,
         }
     }
 
     pub fn reset(&mut self) {
-        self.left.reset();
-        self.right.reset();
-        self.up.reset();
-        self.down.reset();
         self.death.reset();
         self.stop_image = self.stop_left.clone();
         self.current = self.stop_left.clone();
+        self.chomp_dt = 0.0;
+        self.chomp_open = false;
     }
 
     pub fn update(&mut self, dt: f32, direction: Direction) -> Arc<RenderedImage> {
@@ -159,24 +130,42 @@ impl PacmanSprites {
         alive: bool,
     ) -> Arc<RenderedImage> {
         self.current = if alive {
-            match direction {
-                Direction::Left => {
-                    self.stop_image = self.stop_left.clone();
-                    self.left.update(dt)
+            if direction == Direction::Stop {
+                self.chomp_dt = 0.0;
+                self.chomp_open = false;
+                self.stop_image.clone()
+            } else {
+                self.chomp_dt += dt;
+                if self.chomp_dt >= 1.0 / 20.0 {
+                    self.chomp_open = !self.chomp_open;
+                    self.chomp_dt = 0.0;
                 }
-                Direction::Right => {
-                    self.stop_image = self.stop_right.clone();
-                    self.right.update(dt)
+
+                let directional_image = match direction {
+                    Direction::Left => {
+                        self.stop_image = self.stop_left.clone();
+                        self.left.clone()
+                    }
+                    Direction::Right => {
+                        self.stop_image = self.stop_right.clone();
+                        self.right.clone()
+                    }
+                    Direction::Up => {
+                        self.stop_image = self.stop_up.clone();
+                        self.up.clone()
+                    }
+                    Direction::Down => {
+                        self.stop_image = self.stop_down.clone();
+                        self.down.clone()
+                    }
+                    Direction::Stop => unreachable!("stop handled above"),
+                };
+
+                if self.chomp_open {
+                    directional_image
+                } else {
+                    self.closed.clone()
                 }
-                Direction::Up => {
-                    self.stop_image = self.stop_up.clone();
-                    self.up.update(dt)
-                }
-                Direction::Down => {
-                    self.stop_image = self.stop_down.clone();
-                    self.down.update(dt)
-                }
-                Direction::Stop => self.stop_image.clone(),
             }
         } else {
             self.death.update(dt)
@@ -198,12 +187,12 @@ impl Default for PacmanSprites {
 
 impl GhostSprites {
     pub fn new() -> Self {
-        let sheet = shared_sheet();
-        let start = std::array::from_fn(|index| sheet.crop(x_offset(index), 4, 2, 2));
-        let up = std::array::from_fn(|index| sheet.crop(x_offset(index), 4, 2, 2));
-        let down = std::array::from_fn(|index| sheet.crop(x_offset(index), 6, 2, 2));
-        let left = std::array::from_fn(|index| sheet.crop(x_offset(index), 8, 2, 2));
-        let right = std::array::from_fn(|index| sheet.crop(x_offset(index), 10, 2, 2));
+        let assets = shared_arcade_assets();
+        let left = assets.ghost_left.clone();
+        let down = assets.ghost_down.clone();
+        let right = assets.ghost_right.clone();
+        let up = assets.ghost_up.clone();
+        let start = up.clone();
 
         Self {
             start,
@@ -211,11 +200,12 @@ impl GhostSprites {
             down,
             left,
             right,
-            spawn_up: sheet.crop(8, 4, 2, 2),
-            spawn_down: sheet.crop(8, 6, 2, 2),
-            spawn_left: sheet.crop(8, 8, 2, 2),
-            spawn_right: sheet.crop(8, 10, 2, 2),
-            freight: sheet.crop(10, 4, 2, 2),
+            spawn_up: assets.ghost_eyes_up.clone(),
+            spawn_down: assets.ghost_eyes_down.clone(),
+            spawn_left: assets.ghost_eyes_left.clone(),
+            spawn_right: assets.ghost_eyes_right.clone(),
+            freight: assets.ghost_freight.clone(),
+            freight_flash: assets.ghost_freight_flash.clone(),
         }
     }
 
@@ -224,6 +214,8 @@ impl GhostSprites {
         kind: GhostKind,
         mode: GhostMode,
         direction: Direction,
+        freight_remaining: Option<f32>,
+        fright_total_duration: Option<f32>,
     ) -> Arc<RenderedImage> {
         let index = kind.index();
 
@@ -235,7 +227,7 @@ impl GhostSprites {
                 Direction::Right => self.right[index].clone(),
                 Direction::Stop => self.start[index].clone(),
             },
-            GhostMode::Freight => self.freight.clone(),
+            GhostMode::Freight => self.freight_image(freight_remaining, fright_total_duration),
             GhostMode::Spawn => match direction {
                 Direction::Up => self.spawn_up.clone(),
                 Direction::Down => self.spawn_down.clone(),
@@ -243,6 +235,28 @@ impl GhostSprites {
                 Direction::Right => self.spawn_right.clone(),
                 Direction::Stop => self.spawn_up.clone(),
             },
+        }
+    }
+
+    fn freight_image(
+        &self,
+        freight_remaining: Option<f32>,
+        fright_total_duration: Option<f32>,
+    ) -> Arc<RenderedImage> {
+        let elapsed = freight_remaining
+            .zip(fright_total_duration)
+            .map(|(remaining, total)| (total - remaining).max(0.0))
+            .unwrap_or(0.0);
+        let frame = ((elapsed / arcade::fright_flash_half_period_seconds()).floor() as usize) % 2;
+
+        let flashing = freight_remaining
+            .zip(fright_total_duration)
+            .is_some_and(|(remaining, total)| remaining <= arcade::fright_flash_duration(total));
+
+        if flashing {
+            self.freight_flash[frame].clone()
+        } else {
+            self.freight[frame].clone()
         }
     }
 }
@@ -255,17 +269,27 @@ impl Default for GhostSprites {
 
 impl FruitSprites {
     pub fn new() -> Self {
+        let assets = shared_arcade_assets();
         Self {
-            images: FRUIT_TILE_POSITIONS.map(|(x, y)| shared_sheet().crop(x, y, 2, 2)),
+            items: assets.fruit_items.clone(),
+            icons: assets.fruit_icons.clone(),
         }
     }
 
+    pub fn item_image(&self, index: usize) -> Arc<RenderedImage> {
+        self.items[index % self.items.len()].clone()
+    }
+
+    pub fn icon_image(&self, index: usize) -> Arc<RenderedImage> {
+        self.icons[index % self.icons.len()].clone()
+    }
+
     pub fn image(&self, index: usize) -> Arc<RenderedImage> {
-        self.images[index % self.images.len()].clone()
+        self.item_image(index)
     }
 
     pub fn image_for_level(&self, level_index: u32) -> Arc<RenderedImage> {
-        self.image(level_index as usize)
+        self.item_image(level_index as usize)
     }
 }
 
@@ -278,7 +302,7 @@ impl Default for FruitSprites {
 impl LifeSprites {
     pub fn new(num_lives: u32) -> Self {
         Self {
-            image: shared_sheet().crop(0, 0, 2, 2),
+            image: shared_arcade_assets().pacman_left.clone(),
             lives: num_lives as usize,
         }
     }
@@ -302,60 +326,22 @@ impl LifeSprites {
 
 impl MazeSprites {
     pub fn new() -> Self {
-        Self::from_layout(MAZE_FILE, MAZE_ROTATIONS)
-    }
-
-    pub fn from_layout(layout: &str, rotations: &str) -> Self {
         Self {
-            data: parse_grid(layout),
-            rotations: parse_grid(rotations),
+            background: load_embedded_png(include_bytes!("../assets/arcade/maze-blue.png")),
+            flash_background: load_embedded_png(include_bytes!("../assets/arcade/maze-flash.png")),
         }
     }
 
-    pub fn construct_background(&self, level: u32) -> Arc<RenderedImage> {
-        self.construct_background_row(level.saturating_sub(1) % 5)
+    pub fn from_layout(_layout: &str) -> Self {
+        Self::new()
+    }
+
+    pub fn construct_background(&self, _level: u32) -> Arc<RenderedImage> {
+        self.background.clone()
     }
 
     pub fn construct_flash_background(&self) -> Arc<RenderedImage> {
-        self.construct_background_row(FLASH_BACKGROUND_ROW)
-    }
-
-    pub fn construct_background_row(&self, sprite_row: u32) -> Arc<RenderedImage> {
-        let sheet = shared_sheet();
-        let mut background = solid_image(SCREEN_WIDTH, SCREEN_HEIGHT, BLACK);
-
-        for (row, tiles) in self.data.iter().enumerate() {
-            for (col, tile) in tiles.iter().copied().enumerate() {
-                let Some(x) = maze_tile_sprite_x(tile) else {
-                    if tile == '=' {
-                        let sprite = sheet.crop(10, 8, 1, 1);
-                        blit_image(
-                            &mut background,
-                            &sprite,
-                            col as u32 * TILE_WIDTH,
-                            row as u32 * TILE_HEIGHT,
-                        );
-                    }
-                    continue;
-                };
-
-                let rotation = self
-                    .rotations
-                    .get(row)
-                    .and_then(|rotation_row| rotation_row.get(col))
-                    .and_then(|value| value.to_digit(10))
-                    .unwrap_or(0) as u8;
-                let sprite = rotate_image(&sheet.crop(x, sprite_row, 1, 1), rotation);
-                blit_image(
-                    &mut background,
-                    &sprite,
-                    col as u32 * TILE_WIDTH,
-                    row as u32 * TILE_HEIGHT,
-                );
-            }
-        }
-
-        Arc::new(background)
+        self.flash_background.clone()
     }
 }
 
@@ -365,166 +351,126 @@ impl Default for MazeSprites {
     }
 }
 
-impl SpriteSheet {
-    fn load() -> anyhow::Result<Self> {
-        let mut decoder = Decoder::new(Cursor::new(SPRITESHEET_BYTES));
-        decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
-        let mut reader = decoder.read_info().context("read spritesheet metadata")?;
-        let mut buffer = vec![
-            0;
-            reader
-                .output_buffer_size()
-                .expect("png decoder should know output buffer size")
-        ];
-        let info = reader
-            .next_frame(&mut buffer)
-            .context("decode spritesheet pixels")?;
-        let raw = &buffer[..info.buffer_size()];
-        let mut rgba = match info.color_type {
-            ColorType::Rgba => raw.to_vec(),
-            ColorType::Rgb => rgb_to_rgba(raw),
-            ColorType::Grayscale => grayscale_to_rgba(raw),
-            ColorType::GrayscaleAlpha => grayscale_alpha_to_rgba(raw),
-            ColorType::Indexed => unreachable!("expanded indexed PNG should not remain indexed"),
-        };
-
-        let transparent = rgba[..4].to_vec();
-        for chunk in rgba.chunks_exact_mut(4) {
-            if chunk[..3] == transparent[..3] {
-                chunk[3] = 0;
-            }
-        }
-
-        Ok(Self {
-            image: RenderedImage {
-                width: info.width,
-                height: info.height,
-                pixels: rgba,
-            },
-        })
-    }
-
-    fn crop(&self, tile_x: u32, tile_y: u32, tiles_w: u32, tiles_h: u32) -> Arc<RenderedImage> {
-        let x = tile_x * TILE_WIDTH;
-        let y = tile_y * TILE_HEIGHT;
-        let width = tiles_w * TILE_WIDTH;
-        let height = tiles_h * TILE_HEIGHT;
-        let mut pixels = vec![0; width as usize * height as usize * 4];
-
-        for row in 0..height {
-            for col in 0..width {
-                let src_x = x + col;
-                let src_y = y + row;
-                let src_index = ((src_y * self.image.width + src_x) as usize).saturating_mul(4);
-                let dst_index = ((row * width + col) as usize).saturating_mul(4);
-                pixels[dst_index..dst_index + 4]
-                    .copy_from_slice(&self.image.pixels[src_index..src_index + 4]);
-            }
-        }
-
-        Arc::new(RenderedImage {
-            width,
-            height,
-            pixels,
-        })
-    }
+fn shared_arcade_assets() -> &'static ArcadeActorAssets {
+    static ASSETS: OnceLock<ArcadeActorAssets> = OnceLock::new();
+    ASSETS.get_or_init(|| ArcadeActorAssets {
+        pacman_left: load_embedded_png(include_bytes!("../assets/arcade/pacman-left.png")),
+        pacman_right: load_embedded_png(include_bytes!("../assets/arcade/pacman-right.png")),
+        pacman_up: load_embedded_png(include_bytes!("../assets/arcade/pacman-up.png")),
+        pacman_down: load_embedded_png(include_bytes!("../assets/arcade/pacman-down.png")),
+        pacman_closed: load_embedded_png(include_bytes!("../assets/arcade/pacman-closed.png")),
+        pacman_death: [
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-0.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-1.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-2.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-3.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-4.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-5.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-6.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-7.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-8.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-9.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pacman-death-10.png")),
+        ],
+        ghost_left: [
+            load_embedded_png(include_bytes!("../assets/arcade/blinky-left.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pinky-left.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/inky-left.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/clyde-left.png")),
+        ],
+        ghost_down: [
+            load_embedded_png(include_bytes!("../assets/arcade/blinky-down.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pinky-down.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/inky-down.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/clyde-down.png")),
+        ],
+        ghost_right: [
+            load_embedded_png(include_bytes!("../assets/arcade/blinky-right.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pinky-right.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/inky-right.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/clyde-right.png")),
+        ],
+        ghost_up: [
+            load_embedded_png(include_bytes!("../assets/arcade/blinky-up.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/pinky-up.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/inky-up.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/clyde-up.png")),
+        ],
+        ghost_eyes_up: load_embedded_png(include_bytes!("../assets/arcade/ghost-eyes-up.png")),
+        ghost_eyes_down: load_embedded_png(include_bytes!("../assets/arcade/ghost-eyes-down.png")),
+        ghost_eyes_left: load_embedded_png(include_bytes!("../assets/arcade/ghost-eyes-left.png")),
+        ghost_eyes_right: load_embedded_png(include_bytes!(
+            "../assets/arcade/ghost-eyes-right.png"
+        )),
+        ghost_freight: [
+            load_embedded_png(include_bytes!("../assets/arcade/ghost-freight-0.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/ghost-freight-1.png")),
+        ],
+        ghost_freight_flash: [
+            load_embedded_png(include_bytes!("../assets/arcade/ghost-freight-flash-0.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/ghost-freight-flash-1.png")),
+        ],
+        fruit_items: [
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-cherry.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-strawberry.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-peach.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-apple.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-grape.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-galaxian.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-bell.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-item-key.png")),
+        ],
+        fruit_icons: [
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-cherry.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-strawberry.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-peach.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-apple.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-grape.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-galaxian.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-bell.png")),
+            load_embedded_png(include_bytes!("../assets/arcade/fruit-icon-key.png")),
+        ],
+    })
 }
 
-fn shared_sheet() -> Arc<SpriteSheet> {
-    static SHEET: OnceLock<Arc<SpriteSheet>> = OnceLock::new();
-    SHEET
-        .get_or_init(|| {
-            Arc::new(SpriteSheet::load().expect("embedded spritesheet should decode correctly"))
-        })
-        .clone()
+fn load_embedded_png(bytes: &'static [u8]) -> Arc<RenderedImage> {
+    Arc::new(decode_png_image(bytes).expect("embedded png should decode correctly"))
 }
 
-fn x_offset(index: usize) -> u32 {
-    [0, 2, 4, 6][index]
-}
+fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
+    let mut decoder = Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
+    let mut reader = decoder.read_info().context("read png metadata")?;
+    let mut buffer = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .expect("png decoder should know output buffer size")
+    ];
+    let info = reader
+        .next_frame(&mut buffer)
+        .context("decode png pixels")?;
+    let raw = &buffer[..info.buffer_size()];
+    let mut rgba = match info.color_type {
+        ColorType::Rgba => raw.to_vec(),
+        ColorType::Rgb => rgb_to_rgba(raw),
+        ColorType::Grayscale => grayscale_to_rgba(raw),
+        ColorType::GrayscaleAlpha => grayscale_alpha_to_rgba(raw),
+        ColorType::Indexed => unreachable!("expanded indexed PNG should not remain indexed"),
+    };
 
-fn parse_grid(text: &str) -> Vec<Vec<char>> {
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| {
-            line.split_whitespace()
-                .map(|cell| {
-                    cell.chars()
-                        .next()
-                        .expect("maze cells should contain a symbol")
-                })
-                .collect()
-        })
-        .collect()
-}
-
-fn solid_image(width: u32, height: u32, color: [u8; 4]) -> RenderedImage {
-    let mut pixels = vec![0; width as usize * height as usize * 4];
-    for chunk in pixels.chunks_exact_mut(4) {
-        chunk.copy_from_slice(&color);
-    }
-    RenderedImage {
-        width,
-        height,
-        pixels,
-    }
-}
-
-fn maze_tile_sprite_x(tile: char) -> Option<u32> {
-    tile.to_digit(10).map(|value| value + 12)
-}
-
-fn rotate_image(image: &Arc<RenderedImage>, quarter_turns: u8) -> RenderedImage {
-    let mut rotated = image.as_ref().clone();
-    for _ in 0..quarter_turns % 4 {
-        rotated = rotate_once_counterclockwise(&rotated);
-    }
-    rotated
-}
-
-fn rotate_once_counterclockwise(image: &RenderedImage) -> RenderedImage {
-    let mut rotated = vec![0; image.pixels.len()];
-    let width = image.width as usize;
-    let height = image.height as usize;
-
-    for y in 0..height {
-        for x in 0..width {
-            let src_index = (y * width + x) * 4;
-            let dest_x = y;
-            let dest_y = width - 1 - x;
-            let dest_index = (dest_y * height + dest_x) * 4;
-            rotated[dest_index..dest_index + 4]
-                .copy_from_slice(&image.pixels[src_index..src_index + 4]);
+    let transparent = rgba[..4].to_vec();
+    for chunk in rgba.chunks_exact_mut(4) {
+        if chunk[..3] == transparent[..3] {
+            chunk[3] = 0;
         }
     }
 
-    RenderedImage {
-        width: image.height,
-        height: image.width,
-        pixels: rotated,
-    }
-}
-
-fn blit_image(target: &mut RenderedImage, sprite: &RenderedImage, x: u32, y: u32) {
-    for row in 0..sprite.height {
-        for col in 0..sprite.width {
-            let dst_x = x + col;
-            let dst_y = y + row;
-            if dst_x >= target.width || dst_y >= target.height {
-                continue;
-            }
-
-            let src_index = ((row * sprite.width + col) as usize) * 4;
-            let alpha = sprite.pixels[src_index + 3];
-            if alpha == 0 {
-                continue;
-            }
-
-            let dst_index = ((dst_y * target.width + dst_x) as usize) * 4;
-            target.pixels[dst_index..dst_index + 4]
-                .copy_from_slice(&sprite.pixels[src_index..src_index + 4]);
-        }
-    }
+    Ok(RenderedImage {
+        width: info.width,
+        height: info.height,
+        pixels: rgba,
+    })
 }
 
 fn rgb_to_rgba(raw: &[u8]) -> Vec<u8> {
@@ -555,19 +501,51 @@ fn grayscale_alpha_to_rgba(raw: &[u8]) -> Vec<u8> {
 mod tests {
     use std::sync::Arc;
 
-    use super::{
-        LifeSprites, MazeSprites, PacmanSprites, RenderedImage, rotate_image, shared_sheet,
-    };
+    use super::{LifeSprites, MazeSprites, PacmanSprites};
+    use crate::{pacman::Direction, render::RenderedImage};
 
-    #[test]
-    fn spritesheet_decodes_successfully() {
-        let sheet = shared_sheet();
-        assert!(sheet.image.width > 0);
-        assert!(sheet.image.height > 0);
+    fn mirror(image: &RenderedImage) -> RenderedImage {
+        let mut pixels = vec![0; image.pixels.len()];
+        let width = image.width as usize;
+        let height = image.height as usize;
+        let stride = width * 4;
+        for y in 0..height {
+            let row_start = y * stride;
+            for x in 0..width {
+                let src = row_start + x * 4;
+                let dst = row_start + (width - 1 - x) * 4;
+                pixels[dst..dst + 4].copy_from_slice(&image.pixels[src..src + 4]);
+            }
+        }
+
+        RenderedImage {
+            width: image.width,
+            height: image.height,
+            pixels,
+        }
+    }
+
+    fn flip(image: &RenderedImage) -> RenderedImage {
+        let mut pixels = vec![0; image.pixels.len()];
+        let width = image.width as usize;
+        let height = image.height as usize;
+        let stride = width * 4;
+        for y in 0..height {
+            let src_row_start = y * stride;
+            let dst_row_start = (height - 1 - y) * stride;
+            pixels[dst_row_start..dst_row_start + stride]
+                .copy_from_slice(&image.pixels[src_row_start..src_row_start + stride]);
+        }
+
+        RenderedImage {
+            width: image.width,
+            height: image.height,
+            pixels,
+        }
     }
 
     #[test]
-    fn pacman_sprites_use_two_tile_images() {
+    fn pacman_sprites_use_arcade_sprite_dimensions() {
         let sprites = PacmanSprites::new();
         let image = sprites.current();
 
@@ -595,11 +573,39 @@ mod tests {
     }
 
     #[test]
+    fn pacman_directional_frames_match_right_and_down_mirrors() {
+        let right = Arc::unwrap_or_clone(PacmanSprites::new().update_for_state(
+            0.1,
+            Direction::Right,
+            true,
+        ));
+        let left =
+            Arc::unwrap_or_clone(PacmanSprites::new().update_for_state(0.1, Direction::Left, true));
+        let down =
+            Arc::unwrap_or_clone(PacmanSprites::new().update_for_state(0.1, Direction::Down, true));
+        let up =
+            Arc::unwrap_or_clone(PacmanSprites::new().update_for_state(0.1, Direction::Up, true));
+
+        assert_ne!(left.pixels, right.pixels);
+        assert_ne!(up.pixels, down.pixels);
+        assert_eq!(left.pixels, mirror(&right).pixels);
+        assert_eq!(up.pixels, flip(&down).pixels);
+    }
+
+    #[test]
     fn fruit_sprites_cycle_by_level() {
         let sprites = super::FruitSprites::new();
 
-        assert_eq!(sprites.image_for_level(0).pixels, sprites.image(0).pixels);
-        assert_eq!(sprites.image_for_level(7).pixels, sprites.image(1).pixels);
+        assert_eq!(
+            sprites.image_for_level(0).pixels,
+            sprites.item_image(0).pixels
+        );
+        assert_eq!(
+            sprites.image_for_level(7).pixels,
+            sprites.item_image(7).pixels
+        );
+        assert_eq!(sprites.icon_image(7).width, 32);
+        assert_eq!(sprites.icon_image(7).height, 32);
     }
 
     #[test]
@@ -608,27 +614,5 @@ mod tests {
         lives.remove_image();
 
         assert_eq!(lives.lives(), 4);
-    }
-
-    #[test]
-    fn quarter_turns_rotate_counterclockwise() {
-        let image = Arc::new(RenderedImage {
-            width: 2,
-            height: 3,
-            pixels: vec![
-                1, 0, 0, 255, 2, 0, 0, 255, 3, 0, 0, 255, 4, 0, 0, 255, 5, 0, 0, 255, 6, 0, 0, 255,
-            ],
-        });
-
-        let rotated = rotate_image(&image, 1);
-        let red_values: Vec<u8> = rotated
-            .pixels
-            .chunks_exact(4)
-            .map(|pixel| pixel[0])
-            .collect();
-
-        assert_eq!(rotated.width, 3);
-        assert_eq!(rotated.height, 2);
-        assert_eq!(red_values, vec![2, 4, 6, 1, 3, 5]);
     }
 }

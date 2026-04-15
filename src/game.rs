@@ -2,65 +2,28 @@ use std::sync::Arc;
 
 use crate::{
     actors::{EntityKind, GhostKind},
+    arcade::{
+        ORIGINAL_FRAME_TIME, dot_pause_seconds, fruit_release_dots, ghost_personal_dot_limit,
+        global_release_dot, release_timer_limit,
+    },
+    autopilot::{AutoPilot, AutoPilotContext},
     constants::{
-        BUTTON_CLICK, BUTTON_COLOR, BUTTON_HOVER, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_HEIGHT,
-        TILE_WIDTH, WHITE, YELLOW,
+        BUTTON_CLICK, BUTTON_COLOR, BUTTON_HOVER, ORANGE, PINK, RED, SCREEN_HEIGHT,
+        SCREEN_WIDTH, TEAL, TILE_HEIGHT, TILE_WIDTH, WHITE, YELLOW,
     },
     fruit::Fruit,
-    ghosts::{Ghost, GhostGroup},
+    ghosts::{GhostGroup, GhostGroupUpdateContext},
     mazedata::MazeSpec,
     modes::GhostMode,
     nodes::NodeGroup,
-    pacman::{BasicPacman, Direction, NodeMovementMode, NodePacman},
+    pacman::{Direction, NodePacman},
     pause::PauseController,
     pellets::{PelletGroup, PelletKind},
-    render::{FrameData, RenderedImage, Sprite, SpriteAnchor},
+    render::{Circle, FrameData, RenderedImage, Sprite, SpriteAnchor},
     sprites::{FruitSprites, GhostSprites, LifeSprites, MazeSprites, PacmanSprites},
     text::{StatusText, TextGroup, rasterize_text_image},
     vector::Vector2,
 };
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Stage {
-    BlankScreen,
-    BasicMovement,
-    Nodes,
-    NodeMovement1,
-    NodeMovement2,
-    NodeMovement3,
-    MazeBasics,
-    PacmanMaze,
-    Portals,
-    Pellets,
-    EatingPellets,
-    Level3,
-    Level4,
-    Level5,
-    PacmanDeath,
-    LevelFlash,
-    MoreFruit,
-    MoreMazes,
-    AddTitleScreen,
-    AddButtons,
-    AddSoundMusic,
-    Level7,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Level4Action {
-    ShowEntities,
-    ResetLevel,
-    NextLevel,
-    RestartGame,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Level5Action {
-    ShowEntities,
-    ResetLevel,
-    NextLevel,
-    RestartGame,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Level6Action {
@@ -71,58 +34,10 @@ enum Level6Action {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Level6Config {
-    flash_background: bool,
-    more_fruit: bool,
-    more_mazes: bool,
-    return_to_title: bool,
-}
-
-impl Level6Config {
-    const fn pacman_death() -> Self {
-        Self {
-            flash_background: false,
-            more_fruit: false,
-            more_mazes: false,
-            return_to_title: false,
-        }
-    }
-
-    const fn level_flash() -> Self {
-        Self {
-            flash_background: true,
-            more_fruit: false,
-            more_mazes: false,
-            return_to_title: false,
-        }
-    }
-
-    const fn more_fruit() -> Self {
-        Self {
-            flash_background: true,
-            more_fruit: true,
-            more_mazes: false,
-            return_to_title: false,
-        }
-    }
-
-    const fn more_mazes() -> Self {
-        Self {
-            flash_background: true,
-            more_fruit: true,
-            more_mazes: true,
-            return_to_title: false,
-        }
-    }
-
-    const fn level7() -> Self {
-        Self {
-            flash_background: true,
-            more_fruit: true,
-            more_mazes: true,
-            return_to_title: true,
-        }
-    }
+struct SecretModeFlags {
+    easter_egg_active: bool,
+    easter_egg_force_freight: bool,
+    autopilot_active: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,6 +47,8 @@ pub enum GameEvent {
     GameStarted,
     SmallPelletEaten,
     PowerPelletEaten,
+    FreightModeStarted,
+    FreightModeEnded,
     GhostEaten,
     FruitEaten,
     PacmanDied,
@@ -139,22 +56,42 @@ pub enum GameEvent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Level7Config {
-    buttons: bool,
+pub enum HeadlessAutopilotStopReason {
+    PacmanDied,
+    StepLimit,
 }
 
-impl Level7Config {
-    const fn title_only() -> Self {
-        Self { buttons: false }
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeadlessGhostSnapshot {
+    pub kind: GhostKind,
+    pub mode: GhostMode,
+    pub position: (f32, f32),
+}
 
-    const fn buttons() -> Self {
-        Self { buttons: true }
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeadlessDeathSnapshot {
+    pub level: u32,
+    pub score: u32,
+    pub lives: u32,
+    pub pellets_remaining: usize,
+    pub pacman_position: (f32, f32),
+    pub pacman_direction: Direction,
+    pub ghosts: Vec<HeadlessGhostSnapshot>,
+    pub remaining_pellets: Vec<(f32, f32)>,
+}
 
-    const fn audio() -> Self {
-        Self { buttons: true }
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeadlessAutopilotReport {
+    pub seed: u64,
+    pub steps: usize,
+    pub levels_cleared: u32,
+    pub level_reached: u32,
+    pub pellets_eaten: u32,
+    pub ghosts_eaten: u32,
+    pub fruit_eaten: u32,
+    pub score: u32,
+    pub stop_reason: HeadlessAutopilotStopReason,
+    pub death_snapshot: Option<HeadlessDeathSnapshot>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -169,73 +106,8 @@ pub struct UpdateInput {
 
 #[derive(Debug)]
 pub struct Game {
-    scene: Scene,
+    state: Level7State,
     quit_requested: bool,
-}
-
-#[derive(Debug)]
-enum Scene {
-    BlankScreen,
-    BasicMovement {
-        pacman: BasicPacman,
-    },
-    Nodes {
-        nodes: NodeGroup,
-        pacman: BasicPacman,
-    },
-    NodeMovement {
-        nodes: NodeGroup,
-        pacman: NodePacman,
-    },
-    Maze {
-        nodes: NodeGroup,
-        pacman: NodePacman,
-        pellets: Option<PelletGroup>,
-        eat_pellets: bool,
-    },
-    Ghosts {
-        nodes: NodeGroup,
-        pacman: NodePacman,
-        pellets: PelletGroup,
-        ghost: Ghost,
-    },
-    Level4(Box<Level4State>),
-    Level5(Box<Level5State>),
-    Level6(Box<Level6State>),
-    Level7(Box<Level7State>),
-}
-
-#[derive(Clone, Debug)]
-struct Level4State {
-    nodes: NodeGroup,
-    pacman: NodePacman,
-    pellets: PelletGroup,
-    ghosts: GhostGroup,
-    fruit: Option<Fruit>,
-    pause: PauseController<Level4Action>,
-    level: u32,
-    lives: u32,
-    fruit_thresholds_spawned: [bool; 2],
-}
-
-#[derive(Clone, Debug)]
-struct Level5State {
-    nodes: NodeGroup,
-    pacman: NodePacman,
-    pellets: PelletGroup,
-    ghosts: GhostGroup,
-    fruit: Option<Fruit>,
-    pause: PauseController<Level5Action>,
-    level: u32,
-    lives: u32,
-    score: u32,
-    fruit_thresholds_spawned: [bool; 2],
-    background: Arc<RenderedImage>,
-    text_group: TextGroup,
-    life_sprites: LifeSprites,
-    pacman_sprites: PacmanSprites,
-    ghost_sprites: GhostSprites,
-    fruit_sprites: FruitSprites,
 }
 
 #[derive(Clone, Debug)]
@@ -249,12 +121,17 @@ struct Level6State {
     level: u32,
     lives: u32,
     score: u32,
+    pacman_pause_remaining: f32,
     fruit_thresholds_spawned: [bool; 2],
+    personal_dot_counters: [usize; 4],
+    global_dot_counter: Option<usize>,
+    dot_release_timer: f32,
+    ghost_release_locks: [bool; 4],
+    elroy_suspended: bool,
     background: Arc<RenderedImage>,
     background_norm: Arc<RenderedImage>,
     background_flash: Arc<RenderedImage>,
     flash_background: bool,
-    flash_time: f32,
     flash_timer: f32,
     text_group: TextGroup,
     life_sprites: LifeSprites,
@@ -262,14 +139,16 @@ struct Level6State {
     ghost_sprites: GhostSprites,
     fruit_sprites: FruitSprites,
     fruit_captured: Vec<usize>,
-    config: Level6Config,
     maze_spec: MazeSpec,
     events: Vec<GameEvent>,
     easter_egg_active: bool,
     easter_egg_sequence_index: usize,
     easter_egg_force_freight: bool,
+    easter_egg_autopilot: AutoPilot,
     easter_egg_blink: BlinkFeedback,
     return_to_title_requested: bool,
+    #[cfg(test)]
+    last_pacman_sprite_direction: Direction,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -293,242 +172,64 @@ struct TitleButtonState {
 
 #[derive(Clone, Debug)]
 struct TitleScreenState {
+    scene: TitleAttractScene,
+    scene_timer: f32,
+    prompt_blink_timer: f32,
+    prompt_visible: bool,
     title_image: Arc<RenderedImage>,
-    prompt_image: Arc<RenderedImage>,
-    button: Option<TitleButtonState>,
+    company_image: Arc<RenderedImage>,
+    bonus_image: Arc<RenderedImage>,
+    push_start_image: Arc<RenderedImage>,
+    one_player_image: Arc<RenderedImage>,
+    two_player_image: Arc<RenderedImage>,
+    scoring_image: Arc<RenderedImage>,
+    pellet_score_image: Arc<RenderedImage>,
+    power_score_image: Arc<RenderedImage>,
+    ghost_score_images: [Arc<RenderedImage>; 4],
+    fruit_score_images: [Arc<RenderedImage>; 8],
+    character_image: Arc<RenderedImage>,
+    nickname_image: Arc<RenderedImage>,
+    nickname_rows: [AttractNicknameRow; 4],
+    pacman_sprites: PacmanSprites,
+    ghost_sprites: GhostSprites,
+    fruit_sprites: FruitSprites,
+    button: TitleButtonState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TitleAttractScene {
+    Title,
+    Scoring,
+    Nicknames,
+}
+
+#[derive(Clone, Debug)]
+struct AttractNicknameRow {
+    kind: GhostKind,
+    nickname_image: Arc<RenderedImage>,
+    name_image: Arc<RenderedImage>,
 }
 
 #[derive(Clone, Debug)]
 struct Level7State {
-    config: Level7Config,
     title_screen: TitleScreenState,
     gameplay: Option<Level6State>,
     events: Vec<GameEvent>,
 }
 
 impl Game {
-    pub fn new(stage: Stage) -> Self {
-        let scene = match stage {
-            Stage::BlankScreen => Scene::BlankScreen,
-            Stage::BasicMovement => Scene::BasicMovement {
-                pacman: BasicPacman::new(),
-            },
-            Stage::Nodes => Scene::Nodes {
-                nodes: NodeGroup::setup_test_nodes(),
-                pacman: BasicPacman::new(),
-            },
-            Stage::NodeMovement1 => {
-                let nodes = NodeGroup::setup_test_nodes();
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Teleport);
-                Scene::NodeMovement { nodes, pacman }
-            }
-            Stage::NodeMovement2 => {
-                let nodes = NodeGroup::setup_test_nodes();
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::OvershootStop);
-                Scene::NodeMovement { nodes, pacman }
-            }
-            Stage::NodeMovement3 => {
-                let nodes = NodeGroup::setup_test_nodes();
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-                Scene::NodeMovement { nodes, pacman }
-            }
-            Stage::MazeBasics => {
-                let nodes = NodeGroup::maze_basics();
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-                Scene::Maze {
-                    nodes,
-                    pacman,
-                    pellets: None,
-                    eat_pellets: false,
-                }
-            }
-            Stage::PacmanMaze => {
-                let nodes = NodeGroup::pacman_maze();
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-                Scene::Maze {
-                    nodes,
-                    pacman,
-                    pellets: None,
-                    eat_pellets: false,
-                }
-            }
-            Stage::Portals => {
-                let mut nodes = NodeGroup::pacman_maze();
-                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-                Scene::Maze {
-                    nodes,
-                    pacman,
-                    pellets: None,
-                    eat_pellets: false,
-                }
-            }
-            Stage::Pellets => {
-                let mut nodes = NodeGroup::pacman_maze();
-                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-                Scene::Maze {
-                    nodes,
-                    pacman,
-                    pellets: Some(PelletGroup::maze1()),
-                    eat_pellets: false,
-                }
-            }
-            Stage::EatingPellets => {
-                let mut nodes = NodeGroup::pacman_maze();
-                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-                Scene::Maze {
-                    nodes,
-                    pacman,
-                    pellets: Some(PelletGroup::maze1()),
-                    eat_pellets: true,
-                }
-            }
-            Stage::Level3 => {
-                let mut nodes = NodeGroup::pacman_maze();
-                nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
-                let home = nodes.create_home_nodes(11.5, 14.0);
-                nodes.connect_home_nodes(home, (12.0, 14.0), Direction::Left);
-                nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
-                let pacman =
-                    NodePacman::new(nodes.start_node(), &nodes, NodeMovementMode::Reversible);
-                let mut ghost = Ghost::new(GhostKind::Blinky, nodes.start_node(), &nodes);
-                let spawn_node = nodes
-                    .get_node_from_tiles(13.5, 17.0)
-                    .expect("level 3 spawn node should exist");
-                ghost.set_spawn_node(spawn_node);
-
-                Scene::Ghosts {
-                    nodes,
-                    pacman,
-                    pellets: PelletGroup::maze1(),
-                    ghost,
-                }
-            }
-            Stage::Level4 => Scene::Level4(Box::new(Level4State::new())),
-            Stage::Level5 => Scene::Level5(Box::new(Level5State::new())),
-            Stage::PacmanDeath => {
-                Scene::Level6(Box::new(Level6State::new(Level6Config::pacman_death())))
-            }
-            Stage::LevelFlash => {
-                Scene::Level6(Box::new(Level6State::new(Level6Config::level_flash())))
-            }
-            Stage::MoreFruit => {
-                Scene::Level6(Box::new(Level6State::new(Level6Config::more_fruit())))
-            }
-            Stage::MoreMazes => {
-                Scene::Level6(Box::new(Level6State::new(Level6Config::more_mazes())))
-            }
-            Stage::AddTitleScreen => {
-                Scene::Level7(Box::new(Level7State::new(Level7Config::title_only())))
-            }
-            Stage::AddButtons => Scene::Level7(Box::new(Level7State::new(Level7Config::buttons()))),
-            Stage::AddSoundMusic | Stage::Level7 => {
-                Scene::Level7(Box::new(Level7State::new(Level7Config::audio())))
-            }
-        };
-
+    pub fn new() -> Self {
         Self {
-            scene,
+            state: Level7State::new(),
             quit_requested: false,
         }
     }
 
-    pub fn update(&mut self, dt: f32, requested_direction: Direction, pause_requested: bool) {
-        self.update_with_input(
-            dt,
-            UpdateInput {
-                requested_direction,
-                pause_requested,
-                ..UpdateInput::default()
-            },
-        );
-    }
-
     pub fn update_with_input(&mut self, dt: f32, input: UpdateInput) {
         let q_pressed = input.typed_chars.contains(&'q');
+        self.state.update(dt, &input);
 
-        match &mut self.scene {
-            Scene::BlankScreen => {}
-            Scene::BasicMovement { pacman } | Scene::Nodes { pacman, .. } => {
-                pacman.update(dt, input.requested_direction);
-            }
-            Scene::NodeMovement { nodes, pacman } => {
-                pacman.update(dt, input.requested_direction, nodes)
-            }
-            Scene::Maze {
-                nodes,
-                pacman,
-                pellets,
-                eat_pellets,
-            } => {
-                pacman.update(dt, input.requested_direction, nodes);
-                if let Some(pellets) = pellets {
-                    pellets.update(dt);
-                    if *eat_pellets {
-                        pellets.try_eat(pacman.position(), pacman.collide_radius());
-                    }
-                }
-            }
-            Scene::Ghosts {
-                nodes,
-                pacman,
-                pellets,
-                ghost,
-            } => {
-                pacman.update(dt, input.requested_direction, nodes);
-                ghost.update(
-                    dt,
-                    nodes,
-                    pacman.position(),
-                    pacman.direction(),
-                    ghost.position(),
-                );
-                pellets.update(dt);
-
-                if let Some(pellet) = pellets.try_eat(pacman.position(), pacman.collide_radius())
-                    && pellet.kind() == PelletKind::PowerPellet
-                {
-                    ghost.start_freight();
-                }
-
-                if pacman.collide_check(ghost.position(), ghost.collide_radius())
-                    && ghost.mode() == GhostMode::Freight
-                {
-                    ghost.start_spawn(nodes);
-                }
-            }
-            Scene::Level4(state) => {
-                state.update(dt, input.requested_direction, input.pause_requested)
-            }
-            Scene::Level5(state) => {
-                state.update(dt, input.requested_direction, input.pause_requested)
-            }
-            Scene::Level6(state) => state.update(
-                dt,
-                input.requested_direction,
-                input.pause_requested,
-                &input.typed_chars,
-            ),
-            Scene::Level7(state) => state.update(dt, &input),
-        }
-
-        if q_pressed
-            && match &self.scene {
-                Scene::Level6(state) => !state.easter_egg_active(),
-                Scene::Level7(state) => !state.easter_egg_active(),
-                _ => true,
-            }
-        {
+        if q_pressed {
             self.quit_requested = true;
         }
     }
@@ -538,63 +239,80 @@ impl Game {
     }
 
     pub fn drain_events(&mut self) -> Vec<GameEvent> {
-        match &mut self.scene {
-            Scene::Level6(state) => state.drain_events(),
-            Scene::Level7(state) => state.drain_events(),
-            _ => Vec::new(),
-        }
+        self.state.drain_events()
     }
 
     pub fn frame(&self) -> FrameData {
         let mut frame = FrameData::default();
-
-        match &self.scene {
-            Scene::BlankScreen => {}
-            Scene::BasicMovement { pacman } => frame.circles.push(pacman.renderable()),
-            Scene::Nodes { nodes, pacman } => {
-                nodes.append_renderables(&mut frame);
-                frame.circles.push(pacman.renderable());
-            }
-            Scene::NodeMovement { nodes, pacman } => {
-                nodes.append_renderables(&mut frame);
-                frame.circles.push(pacman.renderable());
-            }
-            Scene::Maze {
-                nodes,
-                pacman,
-                pellets,
-                ..
-            } => {
-                nodes.append_renderables(&mut frame);
-                if let Some(pellets) = pellets {
-                    pellets.append_renderables(&mut frame);
-                }
-                frame.circles.push(pacman.renderable());
-            }
-            Scene::Ghosts {
-                nodes,
-                pacman,
-                pellets,
-                ghost,
-            } => {
-                nodes.append_renderables(&mut frame);
-                pellets.append_renderables(&mut frame);
-                frame.circles.push(pacman.renderable());
-                frame.circles.push(ghost.renderable());
-            }
-            Scene::Level4(state) => state.append_renderables(&mut frame),
-            Scene::Level5(state) => state.append_renderables(&mut frame),
-            Scene::Level6(state) => state.append_renderables(&mut frame),
-            Scene::Level7(state) => state.append_renderables(&mut frame),
-        }
-
+        self.state.append_renderables(&mut frame);
         frame
     }
 }
 
-fn build_gameplay_level(maze_spec: MazeSpec) -> (NodeGroup, NodePacman, PelletGroup, GhostGroup) {
+impl Default for Game {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub fn run_headless_autopilot(seed: u64, max_steps: usize) -> HeadlessAutopilotReport {
+    fastrand::seed(seed);
+
+    let mut state = Level6State::new();
+    state.pause.set_paused(false);
+    state.easter_egg_active = true;
+    state.easter_egg_autopilot.set_active(true);
+
+    let mut report = HeadlessAutopilotReport {
+        seed,
+        steps: 0,
+        levels_cleared: 0,
+        level_reached: state.level,
+        pellets_eaten: 0,
+        ghosts_eaten: 0,
+        fruit_eaten: 0,
+        score: 0,
+        stop_reason: HeadlessAutopilotStopReason::StepLimit,
+        death_snapshot: None,
+    };
+
+    for _ in 0..max_steps {
+        state.update_headless(ORIGINAL_FRAME_TIME);
+        report.steps += 1;
+        report.level_reached = report.level_reached.max(state.level);
+
+        for event in state.drain_events() {
+            match event {
+                GameEvent::SmallPelletEaten => report.pellets_eaten += 1,
+                GameEvent::GhostEaten => report.ghosts_eaten += 1,
+                GameEvent::FruitEaten => report.fruit_eaten += 1,
+                GameEvent::LevelCompleted => report.levels_cleared += 1,
+                GameEvent::PacmanDied => {
+                    report.score = state.score;
+                    report.stop_reason = HeadlessAutopilotStopReason::PacmanDied;
+                    report.death_snapshot = Some(state.headless_death_snapshot());
+                    return report;
+                }
+                GameEvent::TitleScreenEntered
+                | GameEvent::ButtonClicked
+                | GameEvent::GameStarted
+                | GameEvent::PowerPelletEaten
+                | GameEvent::FreightModeStarted
+                | GameEvent::FreightModeEnded => {}
+            }
+        }
+    }
+
+    report.score = state.score;
+    report
+}
+
+fn build_gameplay_level(
+    maze_spec: MazeSpec,
+    level: u32,
+) -> (NodeGroup, NodePacman, PelletGroup, GhostGroup) {
     let mut nodes = NodeGroup::from_pacman_layout(maze_spec.layout);
-    for &(left, right) in maze_spec.portal_pairs {
+    for &(left, right) in &maze_spec.portal_pairs {
         nodes.set_portal_pair(left, right);
     }
 
@@ -609,24 +327,50 @@ fn build_gameplay_level(maze_spec: MazeSpec) -> (NodeGroup, NodePacman, PelletGr
     };
 
     let pacman_start = node_at(&nodes, maze_spec.pacman_start, "pacman start node");
-    let mut pacman = NodePacman::new(pacman_start, &nodes, NodeMovementMode::Reversible);
-    pacman.configure_start(pacman_start, Direction::Left, Some(Direction::Left), &nodes);
+    let mut pacman = NodePacman::new(pacman_start, &nodes);
+    pacman.configure_level(level);
+    pacman.configure_start(
+        pacman_start,
+        Direction::Left,
+        Some(Direction::Left),
+        Some(Vector2::new(
+            maze_spec.pacman_start_pixels.0,
+            maze_spec.pacman_start_pixels.1,
+        )),
+        &nodes,
+    );
 
-    let mut ghosts = GhostGroup::new(nodes.start_node(), &nodes);
-    ghosts.ghost_mut(GhostKind::Blinky).set_start_node(
+    let mut ghosts = GhostGroup::new(nodes.start_node(), &nodes, level);
+    ghosts.ghost_mut(GhostKind::Blinky).set_start_state(
         node_at(&nodes, maze_spec.blinky_start(), "blinky start node"),
+        Some(Vector2::new(
+            maze_spec.blinky_start_pixels.0,
+            maze_spec.blinky_start_pixels.1,
+        )),
         &nodes,
     );
-    ghosts.ghost_mut(GhostKind::Pinky).set_start_node(
+    ghosts.ghost_mut(GhostKind::Pinky).set_start_state(
         node_at(&nodes, maze_spec.pinky_start(), "pinky start node"),
+        Some(Vector2::new(
+            maze_spec.pinky_start_pixels.0,
+            maze_spec.pinky_start_pixels.1,
+        )),
         &nodes,
     );
-    ghosts.ghost_mut(GhostKind::Inky).set_start_node(
+    ghosts.ghost_mut(GhostKind::Inky).set_start_state(
         node_at(&nodes, maze_spec.inky_start(), "inky start node"),
+        Some(Vector2::new(
+            maze_spec.inky_start_pixels.0,
+            maze_spec.inky_start_pixels.1,
+        )),
         &nodes,
     );
-    ghosts.ghost_mut(GhostKind::Clyde).set_start_node(
+    ghosts.ghost_mut(GhostKind::Clyde).set_start_state(
         node_at(&nodes, maze_spec.clyde_start(), "clyde start node"),
+        Some(Vector2::new(
+            maze_spec.clyde_start_pixels.0,
+            maze_spec.clyde_start_pixels.1,
+        )),
         &nodes,
     );
     ghosts.set_spawn_node(node_at(&nodes, maze_spec.spawn_node(), "ghost spawn node"));
@@ -637,11 +381,7 @@ fn build_gameplay_level(maze_spec: MazeSpec) -> (NodeGroup, NodePacman, PelletGr
         nodes.deny_access_list(position.0, position.1, direction, ghosts.entity_kinds());
     }
 
-    let (direction, position, ghost) = maze_spec.inky_start_restriction();
-    nodes.deny_access(position.0, position.1, direction, ghost.entity());
-    let (direction, position, ghost) = maze_spec.clyde_start_restriction();
-    nodes.deny_access(position.0, position.1, direction, ghost.entity());
-    for &(col, row) in maze_spec.ghost_deny_up {
+    for &(col, row) in &maze_spec.ghost_deny_up {
         nodes.deny_access_list(col, row, Direction::Up, ghosts.entity_kinds());
     }
 
@@ -650,639 +390,28 @@ fn build_gameplay_level(maze_spec: MazeSpec) -> (NodeGroup, NodePacman, PelletGr
     (nodes, pacman, pellets, ghosts)
 }
 
-impl Level4State {
-    const FRUIT_THRESHOLDS: [usize; 2] = [50, 140];
-
-    fn new() -> Self {
-        Self::start_level(1, 5)
-    }
-
-    fn start_level(level: u32, lives: u32) -> Self {
-        let mut nodes = NodeGroup::pacman_maze();
-        nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
-        let home = nodes.create_home_nodes(11.5, 14.0);
-        nodes.connect_home_nodes(home, (12.0, 14.0), Direction::Left);
-        nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
-
-        let pacman_start = nodes
-            .get_node_from_tiles(15.0, 26.0)
-            .expect("level 4 pacman start node should exist");
-        let mut pacman = NodePacman::new(pacman_start, &nodes, NodeMovementMode::Reversible);
-        pacman.configure_start(pacman_start, Direction::Left, Some(Direction::Left), &nodes);
-
-        let mut ghosts = GhostGroup::new(nodes.start_node(), &nodes);
-        ghosts.ghost_mut(GhostKind::Blinky).set_start_node(
-            nodes
-                .get_node_from_tiles(13.5, 14.0)
-                .expect("blinky start node should exist"),
-            &nodes,
-        );
-        ghosts.ghost_mut(GhostKind::Pinky).set_start_node(
-            nodes
-                .get_node_from_tiles(13.5, 17.0)
-                .expect("pinky start node should exist"),
-            &nodes,
-        );
-        ghosts.ghost_mut(GhostKind::Inky).set_start_node(
-            nodes
-                .get_node_from_tiles(11.5, 17.0)
-                .expect("inky start node should exist"),
-            &nodes,
-        );
-        ghosts.ghost_mut(GhostKind::Clyde).set_start_node(
-            nodes
-                .get_node_from_tiles(15.5, 17.0)
-                .expect("clyde start node should exist"),
-            &nodes,
-        );
-        ghosts.set_spawn_node(
-            nodes
-                .get_node_from_tiles(13.5, 17.0)
-                .expect("ghost spawn node should exist"),
-        );
-
-        nodes.deny_home_access(EntityKind::Pacman);
-        nodes.deny_home_access_list(ghosts.entity_kinds());
-        nodes.deny_access_list(13.5, 17.0, Direction::Left, ghosts.entity_kinds());
-        nodes.deny_access_list(13.5, 17.0, Direction::Right, ghosts.entity_kinds());
-        nodes.deny_access(11.5, 17.0, Direction::Right, EntityKind::Inky);
-        nodes.deny_access(15.5, 17.0, Direction::Left, EntityKind::Clyde);
-        nodes.deny_access_list(12.0, 14.0, Direction::Up, ghosts.entity_kinds());
-        nodes.deny_access_list(15.0, 14.0, Direction::Up, ghosts.entity_kinds());
-        nodes.deny_access_list(12.0, 26.0, Direction::Up, ghosts.entity_kinds());
-        nodes.deny_access_list(15.0, 26.0, Direction::Up, ghosts.entity_kinds());
-
-        Self {
-            nodes,
-            pacman,
-            pellets: PelletGroup::maze1(),
-            ghosts,
-            fruit: None,
-            pause: PauseController::new(true),
-            level,
-            lives,
-            fruit_thresholds_spawned: [false; 2],
-        }
-    }
-
-    fn update(&mut self, dt: f32, requested_direction: Direction, pause_requested: bool) {
-        self.pellets.update(dt);
-
-        if !self.pause.paused() {
-            self.pacman.update(dt, requested_direction, &self.nodes);
-
-            let returned_to_normal = self.ghosts.update(
-                dt,
-                &self.nodes,
-                self.pacman.position(),
-                self.pacman.direction(),
-            );
-            for entity in returned_to_normal {
-                self.nodes.deny_home_access(entity);
-            }
-
-            if let Some(fruit) = &mut self.fruit {
-                fruit.update(dt);
-            }
-
-            self.check_pellet_events();
-            self.check_ghost_events();
-            self.check_fruit_events();
-        }
-
-        if let Some(action) = self.pause.update(dt) {
-            self.handle_after_pause(action);
-        }
-
-        if pause_requested && self.pacman.alive() && !self.pause.is_timed() {
-            if self.pause.toggle() {
-                self.hide_entities();
-            } else {
-                self.show_entities();
-            }
-        }
-    }
-
-    fn check_pellet_events(&mut self) {
-        let Some(pellet) = self
-            .pellets
-            .try_eat(self.pacman.position(), self.pacman.collide_radius())
-        else {
-            return;
-        };
-
-        if self.pellets.num_eaten() == 30 {
-            self.nodes
-                .allow_access(11.5, 17.0, Direction::Right, EntityKind::Inky);
-        }
-        if self.pellets.num_eaten() == 70 {
-            self.nodes
-                .allow_access(15.5, 17.0, Direction::Left, EntityKind::Clyde);
-        }
-
-        if pellet.kind() == PelletKind::PowerPellet {
-            self.ghosts.start_freight();
-        }
-
-        if self.pellets.is_empty() {
-            self.hide_entities();
-            self.pause.start_timed_pause(3.0, Level4Action::NextLevel);
-        }
-    }
-
-    fn check_ghost_events(&mut self) {
-        let mut collision = None;
-        for ghost in self.ghosts.iter() {
-            if self
-                .pacman
-                .collide_check(ghost.position(), ghost.collide_radius())
-            {
-                collision = Some((ghost.kind(), ghost.mode()));
-                break;
-            }
-        }
-
-        let Some((ghost_kind, ghost_mode)) = collision else {
-            return;
-        };
-
-        match ghost_mode {
-            GhostMode::Freight => {
-                self.pacman.hide();
-                self.ghosts.ghost_mut(ghost_kind).hide();
-                self.pause
-                    .start_timed_pause(1.0, Level4Action::ShowEntities);
-                self.ghosts.ghost_mut(ghost_kind).start_spawn(&self.nodes);
-                self.nodes.allow_home_access(ghost_kind.entity());
-                self.ghosts.update_points();
-            }
-            GhostMode::Spawn => {}
-            GhostMode::Scatter | GhostMode::Chase => {
-                if !self.pacman.alive() {
-                    return;
-                }
-
-                self.lives = self.lives.saturating_sub(1);
-                self.pacman.die();
-                self.ghosts.hide();
-                let action = if self.lives == 0 {
-                    Level4Action::RestartGame
-                } else {
-                    Level4Action::ResetLevel
-                };
-                self.pause.start_timed_pause(3.0, action);
-            }
-        }
-    }
-
-    fn check_fruit_events(&mut self) {
-        for (index, threshold) in Self::FRUIT_THRESHOLDS.iter().enumerate() {
-            if !self.fruit_thresholds_spawned[index]
-                && self.pellets.num_eaten() >= *threshold
-                && self.fruit.is_none()
-            {
-                let node = self
-                    .nodes
-                    .get_node_from_tiles(9.0, 20.0)
-                    .expect("fruit spawn node should exist");
-                self.fruit = Some(Fruit::new(node, &self.nodes));
-                self.fruit_thresholds_spawned[index] = true;
-                break;
-            }
-        }
-
-        let Some(fruit) = &self.fruit else {
-            return;
-        };
-
-        if self
-            .pacman
-            .collide_check(fruit.position(), fruit.collide_radius())
-            || fruit.destroyed()
-        {
-            self.fruit = None;
-        }
-    }
-
-    fn handle_after_pause(&mut self, action: Level4Action) {
-        match action {
-            Level4Action::ShowEntities => self.show_entities(),
-            Level4Action::ResetLevel => self.reset_level(),
-            Level4Action::NextLevel => {
-                *self = Self::start_level(self.level + 1, self.lives);
-            }
-            Level4Action::RestartGame => {
-                *self = Self::start_level(1, 5);
-            }
-        }
-    }
-
-    fn reset_level(&mut self) {
-        self.pause.set_paused(true);
-        self.pacman.reset(&self.nodes);
-        self.ghosts.reset(&self.nodes);
-        self.nodes.deny_home_access_list(self.ghosts.entity_kinds());
-        self.fruit = None;
-        self.show_entities();
-    }
-
-    fn show_entities(&mut self) {
-        self.pacman.show();
-        self.ghosts.show();
-    }
-
-    fn hide_entities(&mut self) {
-        self.pacman.hide();
-        self.ghosts.hide();
-    }
-
-    fn append_renderables(&self, frame: &mut FrameData) {
-        self.nodes.append_renderables(frame);
-        self.pellets.append_renderables(frame);
-        if let Some(fruit) = &self.fruit {
-            frame.circles.push(fruit.renderable());
-        }
-        if self.pacman.visible() {
-            frame.circles.push(self.pacman.renderable());
-        }
-        for ghost in self.ghosts.iter() {
-            if ghost.visible() {
-                frame.circles.push(ghost.renderable());
-            }
-        }
-    }
-}
-
-impl Level5State {
-    const FRUIT_THRESHOLDS: [usize; 2] = [50, 140];
-
-    fn new() -> Self {
-        Self::start_level(1, 5, 0)
-    }
-
-    fn start_level(level: u32, lives: u32, score: u32) -> Self {
-        let mut nodes = NodeGroup::pacman_maze();
-        nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
-        let home = nodes.create_home_nodes(11.5, 14.0);
-        nodes.connect_home_nodes(home, (12.0, 14.0), Direction::Left);
-        nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
-
-        let pacman_start = nodes
-            .get_node_from_tiles(15.0, 26.0)
-            .expect("level 5 pacman start node should exist");
-        let mut pacman = NodePacman::new(pacman_start, &nodes, NodeMovementMode::Reversible);
-        pacman.configure_start(pacman_start, Direction::Left, Some(Direction::Left), &nodes);
-
-        let mut ghosts = GhostGroup::new(nodes.start_node(), &nodes);
-        ghosts.ghost_mut(GhostKind::Blinky).set_start_node(
-            nodes
-                .get_node_from_tiles(13.5, 14.0)
-                .expect("blinky start node should exist"),
-            &nodes,
-        );
-        ghosts.ghost_mut(GhostKind::Pinky).set_start_node(
-            nodes
-                .get_node_from_tiles(13.5, 17.0)
-                .expect("pinky start node should exist"),
-            &nodes,
-        );
-        ghosts.ghost_mut(GhostKind::Inky).set_start_node(
-            nodes
-                .get_node_from_tiles(11.5, 17.0)
-                .expect("inky start node should exist"),
-            &nodes,
-        );
-        ghosts.ghost_mut(GhostKind::Clyde).set_start_node(
-            nodes
-                .get_node_from_tiles(15.5, 17.0)
-                .expect("clyde start node should exist"),
-            &nodes,
-        );
-        ghosts.set_spawn_node(
-            nodes
-                .get_node_from_tiles(13.5, 17.0)
-                .expect("ghost spawn node should exist"),
-        );
-
-        nodes.deny_home_access(EntityKind::Pacman);
-        nodes.deny_home_access_list(ghosts.entity_kinds());
-        nodes.deny_access_list(13.5, 17.0, Direction::Left, ghosts.entity_kinds());
-        nodes.deny_access_list(13.5, 17.0, Direction::Right, ghosts.entity_kinds());
-        nodes.deny_access(11.5, 17.0, Direction::Right, EntityKind::Inky);
-        nodes.deny_access(15.5, 17.0, Direction::Left, EntityKind::Clyde);
-        nodes.deny_access_list(12.0, 14.0, Direction::Up, ghosts.entity_kinds());
-        nodes.deny_access_list(15.0, 14.0, Direction::Up, ghosts.entity_kinds());
-        nodes.deny_access_list(12.0, 26.0, Direction::Up, ghosts.entity_kinds());
-        nodes.deny_access_list(15.0, 26.0, Direction::Up, ghosts.entity_kinds());
-
-        let mut text_group = TextGroup::new();
-        text_group.update_score(score);
-        text_group.update_level(level);
-        text_group.show_status(StatusText::Ready);
-
-        Self {
-            nodes,
-            pacman,
-            pellets: PelletGroup::maze1(),
-            ghosts,
-            fruit: None,
-            pause: PauseController::new(true),
-            level,
-            lives,
-            score,
-            fruit_thresholds_spawned: [false; 2],
-            background: MazeSprites::new().construct_background(level),
-            text_group,
-            life_sprites: LifeSprites::new(lives),
-            pacman_sprites: PacmanSprites::new(),
-            ghost_sprites: GhostSprites::new(),
-            fruit_sprites: FruitSprites::new(),
-        }
-    }
-
-    fn update(&mut self, dt: f32, requested_direction: Direction, pause_requested: bool) {
-        self.text_group.update(dt);
-        self.pellets.update(dt);
-
-        if !self.pause.paused() {
-            self.pacman.update(dt, requested_direction, &self.nodes);
-            self.pacman_sprites.update(dt, self.pacman.direction());
-
-            let returned_to_normal = self.ghosts.update(
-                dt,
-                &self.nodes,
-                self.pacman.position(),
-                self.pacman.direction(),
-            );
-            for entity in returned_to_normal {
-                self.nodes.deny_home_access(entity);
-            }
-
-            if let Some(fruit) = &mut self.fruit {
-                fruit.update(dt);
-            }
-
-            self.check_pellet_events();
-            self.check_ghost_events();
-            self.check_fruit_events();
-        }
-
-        if let Some(action) = self.pause.update(dt) {
-            self.handle_after_pause(action);
-        }
-
-        if pause_requested && self.pacman.alive() && !self.pause.is_timed() {
-            if self.pause.toggle() {
-                self.text_group.show_status(StatusText::Paused);
-                self.hide_entities();
-            } else {
-                self.text_group.hide_status();
-                self.show_entities();
-            }
-        }
-    }
-
-    fn update_score(&mut self, points: u32) {
-        self.score += points;
-        self.text_group.update_score(self.score);
-    }
-
-    fn check_pellet_events(&mut self) {
-        let Some(pellet) = self
-            .pellets
-            .try_eat(self.pacman.position(), self.pacman.collide_radius())
-        else {
-            return;
-        };
-
-        self.update_score(pellet.points());
-
-        if self.pellets.num_eaten() == 30 {
-            self.nodes
-                .allow_access(11.5, 17.0, Direction::Right, EntityKind::Inky);
-        }
-        if self.pellets.num_eaten() == 70 {
-            self.nodes
-                .allow_access(15.5, 17.0, Direction::Left, EntityKind::Clyde);
-        }
-
-        if pellet.kind() == PelletKind::PowerPellet {
-            self.ghosts.start_freight();
-        }
-
-        if self.pellets.is_empty() {
-            self.hide_entities();
-            self.pause.start_timed_pause(3.0, Level5Action::NextLevel);
-        }
-    }
-
-    fn check_ghost_events(&mut self) {
-        let mut collision = None;
-        for ghost in self.ghosts.iter() {
-            if self
-                .pacman
-                .collide_check(ghost.position(), ghost.collide_radius())
-            {
-                collision = Some((ghost.kind(), ghost.mode(), ghost.position(), ghost.points()));
-                break;
-            }
-        }
-
-        let Some((ghost_kind, ghost_mode, ghost_position, ghost_points)) = collision else {
-            return;
-        };
-
-        match ghost_mode {
-            GhostMode::Freight => {
-                self.pacman.hide();
-                self.ghosts.ghost_mut(ghost_kind).hide();
-                self.update_score(ghost_points);
-                self.text_group.add_popup(
-                    ghost_points.to_string(),
-                    crate::constants::WHITE,
-                    ghost_position.x,
-                    ghost_position.y,
-                );
-                self.pause
-                    .start_timed_pause(1.0, Level5Action::ShowEntities);
-                self.ghosts.ghost_mut(ghost_kind).start_spawn(&self.nodes);
-                self.nodes.allow_home_access(ghost_kind.entity());
-                self.ghosts.update_points();
-            }
-            GhostMode::Spawn => {}
-            GhostMode::Scatter | GhostMode::Chase => {
-                if !self.pacman.alive() {
-                    return;
-                }
-
-                self.lives = self.lives.saturating_sub(1);
-                self.life_sprites.remove_image();
-                self.pacman.die();
-                self.ghosts.hide();
-                let action = if self.lives == 0 {
-                    self.text_group.show_status(StatusText::GameOver);
-                    Level5Action::RestartGame
-                } else {
-                    Level5Action::ResetLevel
-                };
-                self.pause.start_timed_pause(3.0, action);
-            }
-        }
-    }
-
-    fn check_fruit_events(&mut self) {
-        for (index, threshold) in Self::FRUIT_THRESHOLDS.iter().enumerate() {
-            if !self.fruit_thresholds_spawned[index]
-                && self.pellets.num_eaten() >= *threshold
-                && self.fruit.is_none()
-            {
-                let node = self
-                    .nodes
-                    .get_node_from_tiles(9.0, 20.0)
-                    .expect("fruit spawn node should exist");
-                self.fruit = Some(Fruit::new(node, &self.nodes));
-                self.fruit_thresholds_spawned[index] = true;
-                break;
-            }
-        }
-
-        let Some(fruit) = &self.fruit else {
-            return;
-        };
-
-        let fruit_position = fruit.position();
-        let fruit_points = fruit.points();
-        let hit_fruit = self
-            .pacman
-            .collide_check(fruit.position(), fruit.collide_radius());
-        let expired = fruit.destroyed();
-
-        if hit_fruit {
-            self.update_score(fruit_points);
-            self.text_group.add_popup(
-                fruit_points.to_string(),
-                crate::constants::WHITE,
-                fruit_position.x,
-                fruit_position.y,
-            );
-            self.fruit = None;
-        } else if expired {
-            self.fruit = None;
-        }
-    }
-
-    fn handle_after_pause(&mut self, action: Level5Action) {
-        match action {
-            Level5Action::ShowEntities => {
-                self.text_group.hide_status();
-                self.show_entities();
-            }
-            Level5Action::ResetLevel => self.reset_level(),
-            Level5Action::NextLevel => {
-                *self = Self::start_level(self.level + 1, self.lives, self.score);
-            }
-            Level5Action::RestartGame => {
-                *self = Self::start_level(1, 5, 0);
-            }
-        }
-    }
-
-    fn reset_level(&mut self) {
-        self.pause.set_paused(true);
-        self.pacman.reset(&self.nodes);
-        self.pacman_sprites.reset();
-        self.ghosts.reset(&self.nodes);
-        self.nodes.deny_home_access_list(self.ghosts.entity_kinds());
-        self.fruit = None;
-        self.show_entities();
-        self.text_group.show_status(StatusText::Ready);
-    }
-
-    fn show_entities(&mut self) {
-        self.pacman.show();
-        self.ghosts.show();
-    }
-
-    fn hide_entities(&mut self) {
-        self.pacman.hide();
-        self.ghosts.hide();
-    }
-
-    fn append_renderables(&self, frame: &mut FrameData) {
-        frame.background = Some(self.background.clone());
-        self.pellets.append_renderables(frame);
-
-        if let Some(fruit) = &self.fruit {
-            frame.sprites.push(Sprite {
-                image: self.fruit_sprites.image(0),
-                position: sprite_draw_position(fruit.position()),
-                anchor: SpriteAnchor::TopLeft,
-            });
-        }
-        if self.pacman.visible() {
-            frame.sprites.push(Sprite {
-                image: self.pacman_sprites.current(),
-                position: sprite_draw_position(self.pacman.position()),
-                anchor: SpriteAnchor::TopLeft,
-            });
-        }
-        for ghost in self.ghosts.iter() {
-            if ghost.visible() {
-                frame.sprites.push(Sprite {
-                    image: self
-                        .ghost_sprites
-                        .image(ghost.kind(), ghost.mode(), ghost.direction()),
-                    position: sprite_draw_position(ghost.position()),
-                    anchor: SpriteAnchor::TopLeft,
-                });
-            }
-        }
-
-        self.text_group.append_renderables(frame);
-        let life_icon = self.life_sprites.image();
-        let icon_y = SCREEN_HEIGHT as f32 - life_icon.height as f32;
-        for index in 0..self.life_sprites.lives() {
-            frame.sprites.push(Sprite {
-                image: life_icon.clone(),
-                position: Vector2::new(index as f32 * life_icon.width as f32, icon_y),
-                anchor: SpriteAnchor::TopLeft,
-            });
-        }
-    }
-}
-
 impl Level6State {
-    const FRUIT_THRESHOLDS: [usize; 2] = [50, 140];
     const FLASH_TIME: f32 = 0.2;
     const EASTER_EGG_CODE: [char; 5] = ['x', 'y', 'z', 'z', 'y'];
+    const READY_TIME: f32 = 3.0;
 
-    fn new(config: Level6Config) -> Self {
-        Self::start_level(1, 5, 0, Vec::new(), config)
+    fn new() -> Self {
+        Self::start_level(1, 5, 0, Vec::new())
     }
 
-    fn start_level(
-        level: u32,
-        lives: u32,
-        score: u32,
-        fruit_captured: Vec<usize>,
-        config: Level6Config,
-    ) -> Self {
-        let maze_spec = MazeSpec::for_level(level, config.more_mazes);
-        let (nodes, pacman, pellets, ghosts) = build_gameplay_level(maze_spec);
-        let maze_sprites = MazeSprites::from_layout(maze_spec.layout, maze_spec.rotation);
+    fn start_level(level: u32, lives: u32, score: u32, fruit_captured: Vec<usize>) -> Self {
+        let maze_spec = MazeSpec::for_level(level);
+        let (nodes, pacman, pellets, ghosts) = build_gameplay_level(maze_spec, level);
+        let maze_sprites = MazeSprites::from_layout(maze_spec.layout);
         let background_norm = maze_sprites.construct_background(level);
-        let background_flash = if config.flash_background {
-            maze_sprites.construct_flash_background()
-        } else {
-            background_norm.clone()
-        };
+        let background_flash = maze_sprites.construct_flash_background();
 
         let mut text_group = TextGroup::new();
         text_group.update_score(score);
         text_group.update_level(level);
         text_group.show_status(StatusText::Ready);
 
-        Self {
+        let mut state = Self {
             nodes,
             pacman,
             pellets,
@@ -1292,12 +421,17 @@ impl Level6State {
             level,
             lives,
             score,
+            pacman_pause_remaining: 0.0,
             fruit_thresholds_spawned: [false; 2],
+            personal_dot_counters: [0; 4],
+            global_dot_counter: None,
+            dot_release_timer: 0.0,
+            ghost_release_locks: [false; 4],
+            elroy_suspended: false,
             background: background_norm.clone(),
             background_norm,
             background_flash,
             flash_background: false,
-            flash_time: Self::FLASH_TIME,
             flash_timer: 0.0,
             text_group,
             life_sprites: LifeSprites::new(lives),
@@ -1305,15 +439,22 @@ impl Level6State {
             ghost_sprites: GhostSprites::new(),
             fruit_sprites: FruitSprites::new(),
             fruit_captured,
-            config,
             maze_spec,
             events: Vec::new(),
             easter_egg_active: false,
             easter_egg_sequence_index: 0,
             easter_egg_force_freight: false,
+            easter_egg_autopilot: AutoPilot::default(),
             easter_egg_blink: BlinkFeedback::default(),
             return_to_title_requested: false,
-        }
+            #[cfg(test)]
+            last_pacman_sprite_direction: Direction::Stop,
+        };
+        state
+            .pause
+            .start_timed_pause(Self::READY_TIME, Level6Action::ShowEntities);
+        state.apply_level_start_release_rules();
+        state
     }
 
     fn update(
@@ -1323,18 +464,50 @@ impl Level6State {
         pause_requested: bool,
         typed_chars: &[char],
     ) {
+        let mut requested_direction = requested_direction;
+        let freight_was_active = self.ghosts.has_freight_mode();
         self.handle_easter_egg_input(typed_chars);
         self.easter_egg_blink.update(dt);
         self.text_group.update(dt);
         self.pellets.update(dt);
 
         if !self.pause.paused() {
+            self.tick_ghost_release_timer(dt);
             self.sustain_secret_freight_mode();
+
+            if self.pacman.alive() {
+                if self.easter_egg_autopilot.active() {
+                    requested_direction = self.easter_egg_autopilot.choose_direction(
+                        &self.nodes,
+                        &self.pacman,
+                        &self.pellets,
+                        &self.ghosts,
+                        self.fruit.as_ref(),
+                        AutoPilotContext {
+                            level: self.level,
+                            elroy_enabled: !self.elroy_suspended,
+                        },
+                    );
+                }
+                self.update_pacman_motion(dt, requested_direction);
+                #[cfg(test)]
+                {
+                    self.last_pacman_sprite_direction = self.pacman.direction();
+                }
+                self.pacman_sprites
+                    .update_for_state(dt, self.pacman.direction(), true);
+            }
+
             self.ghosts.update(
                 dt,
                 &self.nodes,
-                self.pacman.position(),
-                self.pacman.direction(),
+                GhostGroupUpdateContext {
+                    pacman_position: self.pacman.position(),
+                    pacman_direction: self.pacman.direction(),
+                    level: self.level,
+                    dots_remaining: self.pellets.len(),
+                    elroy_enabled: !self.elroy_suspended,
+                },
             );
 
             if let Some(fruit) = &mut self.fruit {
@@ -1346,20 +519,14 @@ impl Level6State {
             self.check_fruit_events();
         }
 
-        if self.pacman.alive() {
-            if !self.pause.paused() {
-                self.pacman.update(dt, requested_direction, &self.nodes);
-                self.pacman_sprites
-                    .update_for_state(dt, self.pacman.direction(), true);
-            }
-        } else {
+        if !self.pacman.alive() {
             self.pacman_sprites
                 .update_for_state(dt, self.pacman.direction(), false);
         }
 
         if self.flash_background {
             self.flash_timer += dt;
-            if self.flash_timer >= self.flash_time {
+            if self.flash_timer >= Self::FLASH_TIME {
                 self.flash_timer = 0.0;
                 if Arc::ptr_eq(&self.background, &self.background_norm) {
                     self.background = self.background_flash.clone();
@@ -1382,14 +549,64 @@ impl Level6State {
                 self.show_entities();
             }
         }
+
+        self.sync_freight_events(freight_was_active);
+    }
+
+    fn update_headless(&mut self, dt: f32) {
+        let mut requested_direction = Direction::Stop;
+        let freight_was_active = self.ghosts.has_freight_mode();
+
+        if !self.pause.paused() {
+            self.tick_ghost_release_timer(dt);
+            self.sustain_secret_freight_mode();
+
+            if self.pacman.alive() && self.easter_egg_autopilot.active() {
+                requested_direction = self.easter_egg_autopilot.choose_direction(
+                    &self.nodes,
+                    &self.pacman,
+                    &self.pellets,
+                    &self.ghosts,
+                    self.fruit.as_ref(),
+                    AutoPilotContext {
+                        level: self.level,
+                        elroy_enabled: !self.elroy_suspended,
+                    },
+                );
+            }
+            if self.pacman.alive() {
+                self.update_pacman_motion(dt, requested_direction);
+            }
+
+            self.ghosts.update(
+                dt,
+                &self.nodes,
+                GhostGroupUpdateContext {
+                    pacman_position: self.pacman.position(),
+                    pacman_direction: self.pacman.direction(),
+                    level: self.level,
+                    dots_remaining: self.pellets.len(),
+                    elroy_enabled: !self.elroy_suspended,
+                },
+            );
+
+            if let Some(fruit) = &mut self.fruit {
+                fruit.update(dt);
+            }
+
+            self.check_pellet_events_headless();
+            self.check_ghost_events_headless();
+            self.check_fruit_events_headless();
+        }
+        if let Some(action) = self.pause.update(dt) {
+            self.handle_after_pause_headless(action);
+        }
+
+        self.sync_freight_events(freight_was_active);
     }
 
     fn drain_events(&mut self) -> Vec<GameEvent> {
         std::mem::take(&mut self.events)
-    }
-
-    fn easter_egg_active(&self) -> bool {
-        self.easter_egg_active
     }
 
     fn handle_easter_egg_input(&mut self, typed_chars: &[char]) {
@@ -1401,9 +618,18 @@ impl Level6State {
             }
 
             match character {
-                'q' => self.toggle_secret_freight_mode(),
-                'p' => self.teleport_pacman_to_safest_node(),
-                'y' if !is_secret_code_input => self.reset_ghosts_to_start_positions(),
+                'a' => {
+                    self.easter_egg_autopilot.toggle();
+                }
+                'f' => self.toggle_secret_freight_mode(),
+                't' => {
+                    self.teleport_pacman_to_safest_node();
+                    self.easter_egg_autopilot.invalidate_route();
+                }
+                'r' if !is_secret_code_input => {
+                    self.reset_ghosts_to_start_positions();
+                    self.easter_egg_autopilot.invalidate_route();
+                }
                 _ => {}
             }
         }
@@ -1428,6 +654,7 @@ impl Level6State {
         self.easter_egg_sequence_index = 0;
         self.easter_egg_blink.start();
         if !self.easter_egg_active {
+            self.easter_egg_autopilot.disable();
             self.disable_secret_freight_mode();
         }
     }
@@ -1440,7 +667,6 @@ impl Level6State {
 
         self.easter_egg_force_freight = true;
         self.ghosts.start_freight();
-        self.events.push(GameEvent::PowerPelletEaten);
     }
 
     fn disable_secret_freight_mode(&mut self) {
@@ -1491,9 +717,10 @@ impl Level6State {
     }
 
     fn reset_ghosts_to_start_positions(&mut self) {
-        self.ghosts.reset(&self.nodes);
-        self.restore_ghost_access_rules();
-        if self.easter_egg_force_freight {
+        let freight_active = self.ghosts.has_freight_mode();
+        self.ghosts.reset(&self.nodes, self.level);
+        self.apply_level_start_release_rules();
+        if freight_active || self.easter_egg_force_freight {
             self.ghosts.start_freight();
         }
     }
@@ -1508,18 +735,175 @@ impl Level6State {
                 self.ghosts.entity_kinds(),
             );
         }
+        for &(col, row) in &self.maze_spec.ghost_deny_up {
+            self.nodes
+                .deny_access_list(col, row, Direction::Up, self.ghosts.entity_kinds());
+        }
+        for kind in GhostKind::ALL {
+            if self.ghost_release_locks[kind.index()] {
+                self.apply_release_lock(kind);
+            } else {
+                self.remove_release_lock(kind);
+            }
+        }
     }
 
-    fn secret_mode_flags(&self) -> (bool, bool) {
-        (self.easter_egg_active, self.easter_egg_force_freight)
+    fn set_red_zone_restrictions(&mut self, enabled: bool) {
+        for &(col, row) in &self.maze_spec.ghost_deny_up {
+            if enabled {
+                self.nodes
+                    .deny_access_list(col, row, Direction::Up, self.ghosts.entity_kinds());
+            } else {
+                self.nodes
+                    .allow_access_list(col, row, Direction::Up, self.ghosts.entity_kinds());
+            }
+        }
     }
 
-    fn apply_secret_mode_flags(&mut self, easter_egg_active: bool, easter_egg_force_freight: bool) {
-        self.easter_egg_active = easter_egg_active;
-        self.easter_egg_force_freight = easter_egg_force_freight;
+    fn update_pacman_motion(&mut self, dt: f32, requested_direction: Direction) {
+        let frightened = self.ghosts.has_freight_mode();
+        self.pacman.set_frightened(frightened);
+
+        let moving_dt = (dt - self.pacman_pause_remaining).max(0.0);
+        self.pacman_pause_remaining = (self.pacman_pause_remaining - dt).max(0.0);
+        self.pacman
+            .update(moving_dt, requested_direction, &self.nodes);
+    }
+
+    fn tick_ghost_release_timer(&mut self, dt: f32) {
+        self.dot_release_timer += dt;
+        if self.dot_release_timer < release_timer_limit(self.level) {
+            return;
+        }
+
+        self.dot_release_timer = 0.0;
+        if let Some(kind) = self.next_locked_ghost() {
+            self.release_ghost(kind);
+        }
+    }
+
+    fn record_dot_for_ghost_house(&mut self) {
+        self.dot_release_timer = 0.0;
+
+        if let Some(counter) = &mut self.global_dot_counter {
+            *counter += 1;
+            for kind in [GhostKind::Pinky, GhostKind::Inky, GhostKind::Clyde] {
+                if self.ghost_release_locks[kind.index()]
+                    && global_release_dot(kind).is_some_and(|threshold| *counter == threshold)
+                {
+                    self.release_ghost(kind);
+                    if kind == GhostKind::Clyde {
+                        self.global_dot_counter = None;
+                    }
+                    return;
+                }
+            }
+            return;
+        }
+
+        let Some(kind) = self.next_locked_ghost() else {
+            return;
+        };
+        self.personal_dot_counters[kind.index()] += 1;
+        if self.personal_dot_counters[kind.index()] >= ghost_personal_dot_limit(kind, self.level) {
+            self.release_ghost(kind);
+        }
+    }
+
+    fn apply_level_start_release_rules(&mut self) {
+        self.pacman_pause_remaining = 0.0;
+        self.dot_release_timer = 0.0;
+        self.global_dot_counter = None;
+        self.ghost_release_locks = [false; 4];
+        self.personal_dot_counters = [0; 4];
+        self.elroy_suspended = false;
+
+        if ghost_personal_dot_limit(GhostKind::Inky, self.level) > 0 {
+            self.ghost_release_locks[GhostKind::Inky.index()] = true;
+        }
+        if ghost_personal_dot_limit(GhostKind::Clyde, self.level) > 0 {
+            self.ghost_release_locks[GhostKind::Clyde.index()] = true;
+        }
+        self.restore_ghost_access_rules();
+    }
+
+    fn apply_post_death_release_rules(&mut self) {
+        self.pacman_pause_remaining = 0.0;
+        self.dot_release_timer = 0.0;
+        self.global_dot_counter = Some(0);
+        self.ghost_release_locks = [false; 4];
+        self.ghost_release_locks[GhostKind::Pinky.index()] = true;
+        self.ghost_release_locks[GhostKind::Inky.index()] = true;
+        self.ghost_release_locks[GhostKind::Clyde.index()] = true;
+        self.elroy_suspended = true;
+        self.restore_ghost_access_rules();
+    }
+
+    fn next_locked_ghost(&self) -> Option<GhostKind> {
+        [GhostKind::Pinky, GhostKind::Inky, GhostKind::Clyde]
+            .into_iter()
+            .find(|kind| self.ghost_release_locks[kind.index()])
+    }
+
+    fn release_ghost(&mut self, kind: GhostKind) {
+        self.ghost_release_locks[kind.index()] = false;
+        self.remove_release_lock(kind);
+        if kind == GhostKind::Clyde {
+            self.elroy_suspended = false;
+        }
+    }
+
+    fn apply_release_lock(&mut self, kind: GhostKind) {
+        let (direction, position, ghost) = match kind {
+            GhostKind::Pinky => self.maze_spec.pinky_start_restriction(),
+            GhostKind::Inky => self.maze_spec.inky_start_restriction(),
+            GhostKind::Clyde => self.maze_spec.clyde_start_restriction(),
+            GhostKind::Blinky => return,
+        };
+        self.nodes
+            .deny_access(position.0, position.1, direction, ghost.entity());
+    }
+
+    fn remove_release_lock(&mut self, kind: GhostKind) {
+        let (direction, position, ghost) = match kind {
+            GhostKind::Pinky => self.maze_spec.pinky_start_restriction(),
+            GhostKind::Inky => self.maze_spec.inky_start_restriction(),
+            GhostKind::Clyde => self.maze_spec.clyde_start_restriction(),
+            GhostKind::Blinky => return,
+        };
+        self.nodes
+            .allow_access(position.0, position.1, direction, ghost.entity());
+    }
+
+    fn secret_mode_flags(&self) -> SecretModeFlags {
+        SecretModeFlags {
+            easter_egg_active: self.easter_egg_active,
+            easter_egg_force_freight: self.easter_egg_force_freight,
+            autopilot_active: self.easter_egg_autopilot.active(),
+        }
+    }
+
+    fn apply_secret_mode_flags(&mut self, flags: SecretModeFlags) {
+        self.easter_egg_active = flags.easter_egg_active;
+        self.easter_egg_force_freight = flags.easter_egg_force_freight;
         self.easter_egg_sequence_index = 0;
+        self.easter_egg_autopilot.set_active(flags.autopilot_active);
         if self.easter_egg_force_freight {
             self.ghosts.start_freight();
+        }
+    }
+
+    fn sync_freight_events(&mut self, freight_was_active: bool) {
+        let freight_is_active = self.ghosts.has_freight_mode();
+        self.set_red_zone_restrictions(!freight_is_active);
+        match (freight_was_active, freight_is_active) {
+            (false, true) => {
+                self.events.push(GameEvent::FreightModeStarted);
+            }
+            (true, false) => {
+                self.events.push(GameEvent::FreightModeEnded);
+            }
+            _ => {}
         }
     }
 
@@ -1528,12 +912,8 @@ impl Level6State {
         self.text_group.update_score(self.score);
     }
 
-    fn fruit_level_index(&self) -> u32 {
-        if self.config.more_fruit {
-            self.level.saturating_sub(1)
-        } else {
-            0
-        }
+    fn update_score_headless(&mut self, points: u32) {
+        self.score += points;
     }
 
     fn check_pellet_events(&mut self) {
@@ -1546,17 +926,8 @@ impl Level6State {
 
         self.update_score(pellet.points());
         self.events.push(GameEvent::SmallPelletEaten);
-
-        if self.pellets.num_eaten() == 30 {
-            let (_, position, ghost) = self.maze_spec.inky_start_restriction();
-            self.nodes
-                .allow_access(position.0, position.1, Direction::Right, ghost.entity());
-        }
-        if self.pellets.num_eaten() == 70 {
-            let (_, position, ghost) = self.maze_spec.clyde_start_restriction();
-            self.nodes
-                .allow_access(position.0, position.1, Direction::Left, ghost.entity());
-        }
+        self.pacman_pause_remaining += dot_pause_seconds(pellet.kind() == PelletKind::PowerPellet);
+        self.record_dot_for_ghost_house();
 
         if pellet.kind() == PelletKind::PowerPellet {
             self.ghosts.start_freight();
@@ -1564,13 +935,37 @@ impl Level6State {
         }
 
         if self.pellets.is_empty() {
+            self.easter_egg_autopilot.invalidate_route();
             self.events.push(GameEvent::LevelCompleted);
-            if self.config.flash_background {
-                self.flash_background = true;
-                self.flash_timer = 0.0;
-                self.background = self.background_norm.clone();
-            }
+            self.flash_background = true;
+            self.flash_timer = 0.0;
+            self.background = self.background_norm.clone();
             self.hide_entities();
+            self.pause.start_timed_pause(3.0, Level6Action::NextLevel);
+        }
+    }
+
+    fn check_pellet_events_headless(&mut self) {
+        let Some(pellet) = self
+            .pellets
+            .try_eat(self.pacman.position(), self.pacman.collide_radius())
+        else {
+            return;
+        };
+
+        self.update_score_headless(pellet.points());
+        self.events.push(GameEvent::SmallPelletEaten);
+        self.pacman_pause_remaining += dot_pause_seconds(pellet.kind() == PelletKind::PowerPellet);
+        self.record_dot_for_ghost_house();
+
+        if pellet.kind() == PelletKind::PowerPellet {
+            self.ghosts.start_freight();
+            self.events.push(GameEvent::PowerPelletEaten);
+        }
+
+        if self.pellets.is_empty() {
+            self.easter_egg_autopilot.invalidate_route();
+            self.events.push(GameEvent::LevelCompleted);
             self.pause.start_timed_pause(3.0, Level6Action::NextLevel);
         }
     }
@@ -1631,20 +1026,63 @@ impl Level6State {
         }
     }
 
+    fn check_ghost_events_headless(&mut self) {
+        let mut collision = None;
+        for ghost in self.ghosts.iter() {
+            if self
+                .pacman
+                .collide_check(ghost.position(), ghost.collide_radius())
+            {
+                collision = Some((ghost.kind(), ghost.mode(), ghost.points()));
+                break;
+            }
+        }
+
+        let Some((ghost_kind, ghost_mode, ghost_points)) = collision else {
+            return;
+        };
+
+        match ghost_mode {
+            GhostMode::Freight => {
+                self.update_score_headless(ghost_points);
+                self.pause
+                    .start_timed_pause(1.0, Level6Action::ShowEntities);
+                self.ghosts.ghost_mut(ghost_kind).start_spawn(&self.nodes);
+                self.nodes.allow_home_access(ghost_kind.entity());
+                self.ghosts.update_points();
+                self.events.push(GameEvent::GhostEaten);
+            }
+            GhostMode::Spawn => {}
+            GhostMode::Scatter | GhostMode::Chase => {
+                if !self.pacman.alive() {
+                    return;
+                }
+
+                self.lives = self.lives.saturating_sub(1);
+                self.pacman.die();
+                self.events.push(GameEvent::PacmanDied);
+                let action = if self.lives == 0 {
+                    Level6Action::RestartGame
+                } else {
+                    Level6Action::ResetLevel
+                };
+                self.pause.start_timed_pause(3.0, action);
+            }
+        }
+    }
+
     fn check_fruit_events(&mut self) {
-        for (index, threshold) in Self::FRUIT_THRESHOLDS.iter().enumerate() {
+        for (index, threshold) in fruit_release_dots().into_iter().enumerate() {
             if !self.fruit_thresholds_spawned[index]
-                && self.pellets.num_eaten() >= *threshold
+                && self.pellets.num_eaten() >= threshold
                 && self.fruit.is_none()
             {
-                let node = self
-                    .nodes
-                    .get_node_from_tiles(self.maze_spec.fruit_start.0, self.maze_spec.fruit_start.1)
-                    .expect("fruit spawn node should exist");
                 self.fruit = Some(Fruit::for_level(
-                    node,
-                    &self.nodes,
-                    self.fruit_level_index(),
+                    Vector2::new(
+                        self.maze_spec.fruit_start_pixels.0,
+                        self.maze_spec.fruit_start_pixels.1,
+                    ),
+                    self.level,
                 ));
                 self.fruit_thresholds_spawned[index] = true;
                 break;
@@ -1671,7 +1109,48 @@ impl Level6State {
                 fruit_position.x,
                 fruit_position.y,
             );
-            if self.config.more_fruit && !self.fruit_captured.contains(&fruit_sprite_index) {
+            if !self.fruit_captured.contains(&fruit_sprite_index) {
+                self.fruit_captured.push(fruit_sprite_index);
+            }
+            self.events.push(GameEvent::FruitEaten);
+            self.fruit = None;
+        } else if expired {
+            self.fruit = None;
+        }
+    }
+
+    fn check_fruit_events_headless(&mut self) {
+        for (index, threshold) in fruit_release_dots().into_iter().enumerate() {
+            if !self.fruit_thresholds_spawned[index]
+                && self.pellets.num_eaten() >= threshold
+                && self.fruit.is_none()
+            {
+                self.fruit = Some(Fruit::for_level(
+                    Vector2::new(
+                        self.maze_spec.fruit_start_pixels.0,
+                        self.maze_spec.fruit_start_pixels.1,
+                    ),
+                    self.level,
+                ));
+                self.fruit_thresholds_spawned[index] = true;
+                break;
+            }
+        }
+
+        let Some(fruit) = &self.fruit else {
+            return;
+        };
+
+        let fruit_points = fruit.points();
+        let fruit_sprite_index = fruit.sprite_index();
+        let hit_fruit = self
+            .pacman
+            .collide_check(fruit.position(), fruit.collide_radius());
+        let expired = fruit.destroyed();
+
+        if hit_fruit {
+            self.update_score_headless(fruit_points);
+            if !self.fruit_captured.contains(&fruit_sprite_index) {
                 self.fruit_captured.push(fruit_sprite_index);
             }
             self.events.push(GameEvent::FruitEaten);
@@ -1689,34 +1168,48 @@ impl Level6State {
             }
             Level6Action::ResetLevel => self.reset_level(),
             Level6Action::NextLevel => {
-                let (easter_egg_active, easter_egg_force_freight) = self.secret_mode_flags();
+                let flags = self.secret_mode_flags();
                 *self = Self::start_level(
                     self.level + 1,
                     self.lives,
                     self.score,
                     self.fruit_captured.clone(),
-                    self.config,
                 );
-                self.apply_secret_mode_flags(easter_egg_active, easter_egg_force_freight);
+                self.apply_secret_mode_flags(flags);
             }
             Level6Action::RestartGame => {
-                if self.config.return_to_title {
-                    self.return_to_title_requested = true;
-                } else {
-                    let (easter_egg_active, easter_egg_force_freight) = self.secret_mode_flags();
-                    *self = Self::start_level(1, 5, 0, Vec::new(), self.config);
-                    self.apply_secret_mode_flags(easter_egg_active, easter_egg_force_freight);
-                }
+                self.return_to_title_requested = true;
+            }
+        }
+    }
+
+    fn handle_after_pause_headless(&mut self, action: Level6Action) {
+        match action {
+            Level6Action::ShowEntities => {}
+            Level6Action::ResetLevel => self.reset_level_headless(),
+            Level6Action::NextLevel => {
+                let flags = self.secret_mode_flags();
+                *self = Self::start_level(
+                    self.level + 1,
+                    self.lives,
+                    self.score,
+                    self.fruit_captured.clone(),
+                );
+                self.apply_secret_mode_flags(flags);
+                self.pause.set_paused(false);
+            }
+            Level6Action::RestartGame => {
+                self.return_to_title_requested = true;
             }
         }
     }
 
     fn reset_level(&mut self) {
-        self.pause.set_paused(true);
         self.pacman.reset(&self.nodes);
         self.pacman_sprites.reset();
-        self.ghosts.reset(&self.nodes);
-        self.restore_ghost_access_rules();
+        self.ghosts.reset(&self.nodes, self.level);
+        self.easter_egg_autopilot.invalidate_route();
+        self.apply_post_death_release_rules();
         if self.easter_egg_force_freight {
             self.ghosts.start_freight();
         }
@@ -1726,6 +1219,45 @@ impl Level6State {
         self.background = self.background_norm.clone();
         self.show_entities();
         self.text_group.show_status(StatusText::Ready);
+        self.pause
+            .start_timed_pause(Self::READY_TIME, Level6Action::ShowEntities);
+    }
+
+    fn reset_level_headless(&mut self) {
+        self.pacman.reset(&self.nodes);
+        self.ghosts.reset(&self.nodes, self.level);
+        self.easter_egg_autopilot.invalidate_route();
+        self.apply_post_death_release_rules();
+        if self.easter_egg_force_freight {
+            self.ghosts.start_freight();
+        }
+        self.fruit = None;
+        self.pause.set_paused(false);
+    }
+
+    fn headless_death_snapshot(&self) -> HeadlessDeathSnapshot {
+        HeadlessDeathSnapshot {
+            level: self.level,
+            score: self.score,
+            lives: self.lives,
+            pellets_remaining: self.pellets.len(),
+            pacman_position: self.pacman.position().as_tuple(),
+            pacman_direction: self.pacman.direction(),
+            ghosts: self
+                .ghosts
+                .iter()
+                .map(|ghost| HeadlessGhostSnapshot {
+                    kind: ghost.kind(),
+                    mode: ghost.mode(),
+                    position: ghost.position().as_tuple(),
+                })
+                .collect(),
+            remaining_pellets: self
+                .pellets
+                .iter()
+                .map(|pellet| pellet.position().as_tuple())
+                .collect(),
+        }
     }
 
     fn show_entities(&mut self) {
@@ -1743,26 +1275,33 @@ impl Level6State {
         self.pellets.append_renderables(frame);
 
         if let Some(fruit) = &self.fruit {
+            let image = self.fruit_sprites.item_image(fruit.sprite_index());
             frame.sprites.push(Sprite {
-                image: self.fruit_sprites.image(fruit.sprite_index()),
-                position: sprite_draw_position(fruit.position()),
+                position: gameplay_sprite_draw_position(fruit.position(), image.as_ref()),
+                image,
                 anchor: SpriteAnchor::TopLeft,
             });
         }
         if self.pacman.visible() && self.easter_egg_blink.visible() {
+            let image = self.pacman_sprites.current();
             frame.sprites.push(Sprite {
-                image: self.pacman_sprites.current(),
-                position: sprite_draw_position(self.pacman.position()),
+                position: gameplay_sprite_draw_position(self.pacman.position(), image.as_ref()),
+                image,
                 anchor: SpriteAnchor::TopLeft,
             });
         }
         for ghost in self.ghosts.iter() {
             if ghost.visible() {
+                let image = self.ghost_sprites.image(
+                    ghost.kind(),
+                    ghost.mode(),
+                    ghost.direction(),
+                    ghost.freight_remaining(),
+                    ghost.fright_total_duration(),
+                );
                 frame.sprites.push(Sprite {
-                    image: self
-                        .ghost_sprites
-                        .image(ghost.kind(), ghost.mode(), ghost.direction()),
-                    position: sprite_draw_position(ghost.position()),
+                    position: gameplay_sprite_draw_position(ghost.position(), image.as_ref()),
+                    image,
                     anchor: SpriteAnchor::TopLeft,
                 });
             }
@@ -1779,7 +1318,7 @@ impl Level6State {
             });
         }
         for (index, fruit_index) in self.fruit_captured.iter().enumerate() {
-            let image = self.fruit_sprites.image(*fruit_index);
+            let image = self.fruit_sprites.icon_image(*fruit_index);
             frame.sprites.push(Sprite {
                 image: image.clone(),
                 position: Vector2::new(
@@ -1824,6 +1363,10 @@ impl BlinkFeedback {
     fn visible(&self) -> bool {
         self.visible
     }
+}
+
+fn gameplay_sprite_draw_position(position: Vector2, _image: &RenderedImage) -> Vector2 {
+    position - Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0)
 }
 
 impl Default for BlinkFeedback {
@@ -1895,29 +1438,89 @@ impl TitleButtonState {
     }
 }
 
-impl TitleScreenState {
-    fn new(show_button: bool) -> Self {
-        let button = show_button.then(|| {
-            TitleButtonState::new(
-                SCREEN_WIDTH as f32 / 2.0 - 60.0,
-                SCREEN_HEIGHT as f32 / 2.0 - 30.0,
-                120,
-                60,
-                "START",
-            )
-        });
-        let prompt_image = rasterize_text_image("PRESS ENTER", WHITE, 16.0);
-
-        Self {
-            title_image: rasterize_text_image("PACMAN", YELLOW, 64.0),
-            prompt_image,
-            button,
+impl TitleAttractScene {
+    const fn duration(self) -> f32 {
+        match self {
+            Self::Title => 6.0,
+            Self::Scoring => 8.5,
+            Self::Nicknames => 7.5,
         }
     }
 
-    fn update(&mut self, mouse_position: Option<Vector2>) {
-        if let Some(button) = &mut self.button {
-            button.set_mouse_position(mouse_position);
+    const fn next(self) -> Self {
+        match self {
+            Self::Title => Self::Scoring,
+            Self::Scoring => Self::Nicknames,
+            Self::Nicknames => Self::Title,
+        }
+    }
+}
+
+impl TitleScreenState {
+    fn new() -> Self {
+        Self {
+            scene: TitleAttractScene::Title,
+            scene_timer: 0.0,
+            prompt_blink_timer: 0.0,
+            prompt_visible: true,
+            title_image: rasterize_text_image("PACMAN", YELLOW, 64.0),
+            company_image: rasterize_text_image("1980 MIDWAY MFG CO", WHITE, 16.0),
+            bonus_image: rasterize_text_image("BONUS PACMAN FOR 10000 PTS", WHITE, 16.0),
+            push_start_image: rasterize_text_image("PUSH START BUTTON", YELLOW, 16.0),
+            one_player_image: rasterize_text_image("1 PLAYER ONLY", WHITE, 16.0),
+            two_player_image: rasterize_text_image("1 OR 2 PLAYERS", WHITE, 16.0),
+            scoring_image: rasterize_text_image("SCORING", YELLOW, 24.0),
+            pellet_score_image: rasterize_text_image("10 PTS", WHITE, 16.0),
+            power_score_image: rasterize_text_image("50 PTS", WHITE, 16.0),
+            ghost_score_images: [
+                rasterize_text_image("200", WHITE, 16.0),
+                rasterize_text_image("400", WHITE, 16.0),
+                rasterize_text_image("800", WHITE, 16.0),
+                rasterize_text_image("1600", WHITE, 16.0),
+            ],
+            fruit_score_images: [
+                rasterize_text_image("100", WHITE, 12.0),
+                rasterize_text_image("300", WHITE, 12.0),
+                rasterize_text_image("500", WHITE, 12.0),
+                rasterize_text_image("700", WHITE, 12.0),
+                rasterize_text_image("1000", WHITE, 12.0),
+                rasterize_text_image("2000", WHITE, 12.0),
+                rasterize_text_image("3000", WHITE, 12.0),
+                rasterize_text_image("5000", WHITE, 12.0),
+            ],
+            character_image: rasterize_text_image("CHARACTER", YELLOW, 24.0),
+            nickname_image: rasterize_text_image("NICKNAME", WHITE, 16.0),
+            nickname_rows: [
+                AttractNicknameRow::new(GhostKind::Blinky, "SHADOW", "BLINKY", RED),
+                AttractNicknameRow::new(GhostKind::Pinky, "SPEEDY", "PINKY", PINK),
+                AttractNicknameRow::new(GhostKind::Inky, "BASHFUL", "INKY", TEAL),
+                AttractNicknameRow::new(GhostKind::Clyde, "POKEY", "CLYDE", ORANGE),
+            ],
+            pacman_sprites: PacmanSprites::new(),
+            ghost_sprites: GhostSprites::new(),
+            fruit_sprites: FruitSprites::new(),
+            button: TitleButtonState::new(
+                SCREEN_WIDTH as f32 / 2.0 - 60.0,
+                SCREEN_HEIGHT as f32 - 72.0,
+                120,
+                60,
+                "START",
+            ),
+        }
+    }
+
+    fn update(&mut self, dt: f32, mouse_position: Option<Vector2>) {
+        self.button.set_mouse_position(mouse_position);
+        self.update_prompt_blink(dt);
+        self.scene_timer += dt;
+        while self.scene_timer >= self.scene.duration() {
+            self.scene_timer -= self.scene.duration();
+            self.scene = self.scene.next();
+            self.on_scene_changed();
+        }
+
+        if self.scene == TitleAttractScene::Scoring {
+            self.pacman_sprites.update(dt, Direction::Right);
         }
     }
 
@@ -1930,45 +1533,217 @@ impl TitleScreenState {
             return true;
         }
 
-        let Some(button) = &mut self.button else {
-            return false;
-        };
-
-        if mouse_click_position.is_some_and(|position| button.contains(position)) {
-            button.pressed = true;
+        if mouse_click_position.is_some_and(|position| self.click_starts(position)) {
+            self.button.pressed = true;
             return true;
         }
 
         false
     }
 
-    fn append_renderables(&self, frame: &mut FrameData) {
-        frame.sprites.push(Sprite {
-            image: self.title_image.clone(),
-            position: Vector2::new(32.0, 10.0),
-            anchor: SpriteAnchor::TopLeft,
-        });
+    fn update_prompt_blink(&mut self, dt: f32) {
+        if self.scene != TitleAttractScene::Title {
+            self.prompt_visible = false;
+            self.prompt_blink_timer = 0.0;
+            return;
+        }
 
-        if let Some(button) = &self.button {
-            button.append_renderables(frame);
+        self.prompt_blink_timer += dt;
+        while self.prompt_blink_timer >= 0.35 {
+            self.prompt_blink_timer -= 0.35;
+            self.prompt_visible = !self.prompt_visible;
+        }
+    }
+
+    fn on_scene_changed(&mut self) {
+        self.pacman_sprites.reset();
+        if self.scene == TitleAttractScene::Title {
+            self.prompt_visible = true;
+            self.prompt_blink_timer = 0.0;
+        }
+    }
+
+    fn append_renderables(&self, frame: &mut FrameData) {
+        match self.scene {
+            TitleAttractScene::Title => self.append_title_scene(frame),
+            TitleAttractScene::Scoring => self.append_scoring_scene(frame),
+            TitleAttractScene::Nicknames => self.append_nickname_scene(frame),
+        }
+        if self.shows_button() {
+            self.button.append_renderables(frame);
+        }
+    }
+
+    fn shows_button(&self) -> bool {
+        self.scene == TitleAttractScene::Title
+    }
+
+    fn click_starts(&self, position: Vector2) -> bool {
+        if self.shows_button() {
+            self.button.contains(position)
         } else {
-            frame.sprites.push(Sprite {
-                image: self.prompt_image.clone(),
-                position: Vector2::new(
-                    (SCREEN_WIDTH as f32 - self.prompt_image.width as f32) * 0.5,
-                    SCREEN_HEIGHT as f32 * 0.5,
-                ),
-                anchor: SpriteAnchor::TopLeft,
-            });
+            true
+        }
+    }
+
+    fn append_title_scene(&self, frame: &mut FrameData) {
+        append_centered_text(frame, &self.title_image, 68.0);
+        append_centered_text(frame, &self.company_image, 168.0);
+        append_centered_text(frame, &self.bonus_image, 204.0);
+        if self.prompt_visible {
+            append_centered_text(frame, &self.push_start_image, 286.0);
+        }
+        append_centered_text(frame, &self.one_player_image, 334.0);
+        append_centered_text(frame, &self.two_player_image, 364.0);
+    }
+
+    fn append_scoring_scene(&self, frame: &mut FrameData) {
+        append_centered_text(frame, &self.scoring_image, 44.0);
+
+        frame.circles.push(Circle {
+            center: Vector2::new(112.0, 132.0),
+            radius: 2.0,
+            color: WHITE,
+        });
+        append_text(frame, &self.pellet_score_image, 156.0, 120.0);
+
+        frame.circles.push(Circle {
+            center: Vector2::new(112.0, 186.0),
+            radius: 8.0,
+            color: WHITE,
+        });
+        append_text(frame, &self.power_score_image, 156.0, 174.0);
+
+        let ghost_positions = [176.0, 240.0, 304.0, 368.0];
+        let eaten_times = [1.4, 2.1, 2.8, 3.5];
+        let freight_image = self.ghost_sprites.image(
+            GhostKind::Blinky,
+            GhostMode::Freight,
+            Direction::Left,
+            Some(6.0),
+            Some(6.0),
+        );
+
+        for (index, x) in ghost_positions.into_iter().enumerate() {
+            if self.scene_timer >= eaten_times[index] {
+                let score = &self.ghost_score_images[index];
+                append_text(
+                    frame,
+                    score,
+                    x - score.width as f32 * 0.5,
+                    248.0,
+                );
+            } else {
+                append_actor_sprite(frame, freight_image.clone(), Vector2::new(x, 264.0));
+            }
+        }
+
+        let chase_window_start = 1.0;
+        let chase_window_end = 4.1;
+        if self.scene_timer >= chase_window_start {
+            let progress = ((self.scene_timer - chase_window_start)
+                / (chase_window_end - chase_window_start))
+                .clamp(0.0, 1.0);
+            let x = 88.0 + progress * 336.0;
+            append_actor_sprite(frame, self.pacman_sprites.current(), Vector2::new(x, 264.0));
+        }
+
+        let fruit_positions = [
+            Vector2::new(96.0, 394.0),
+            Vector2::new(184.0, 394.0),
+            Vector2::new(272.0, 394.0),
+            Vector2::new(360.0, 394.0),
+            Vector2::new(96.0, 470.0),
+            Vector2::new(184.0, 470.0),
+            Vector2::new(272.0, 470.0),
+            Vector2::new(360.0, 470.0),
+        ];
+        for (index, position) in fruit_positions.into_iter().enumerate() {
+            append_actor_sprite(
+                frame,
+                self.fruit_sprites.item_image(index),
+                position,
+            );
+            let score = &self.fruit_score_images[index];
+            append_text(
+                frame,
+                score,
+                position.x - score.width as f32 * 0.5,
+                position.y + 22.0,
+            );
+        }
+    }
+
+    fn append_nickname_scene(&self, frame: &mut FrameData) {
+        append_centered_text(frame, &self.character_image, 36.0);
+        append_centered_text(frame, &self.nickname_image, 72.0);
+
+        for (index, row) in self.nickname_rows.iter().enumerate() {
+            let local_time = self.scene_timer - index as f32 * 1.1;
+            if local_time < 0.0 {
+                continue;
+            }
+
+            let progress = (local_time / 0.55).clamp(0.0, 1.0);
+            let center_y = 176.0 + index as f32 * 68.0;
+            let center_x = -24.0 + progress * 124.0;
+            let ghost_image = self
+                .ghost_sprites
+                .image(row.kind, GhostMode::Chase, Direction::Right, None, None);
+            append_actor_sprite(frame, ghost_image, Vector2::new(center_x, center_y));
+
+            if local_time >= 0.2 {
+                append_text(frame, &row.nickname_image, 128.0, center_y - 18.0);
+                append_text(frame, &row.name_image, 320.0, center_y - 18.0);
+            }
         }
     }
 }
 
-impl Level7State {
-    fn new(config: Level7Config) -> Self {
+impl AttractNicknameRow {
+    fn new(
+        kind: GhostKind,
+        nickname: &str,
+        name: &str,
+        name_color: [u8; 4],
+    ) -> Self {
         Self {
-            config,
-            title_screen: TitleScreenState::new(config.buttons),
+            kind,
+            nickname_image: rasterize_text_image(nickname, WHITE, 16.0),
+            name_image: rasterize_text_image(name, name_color, 16.0),
+        }
+    }
+}
+
+fn append_text(frame: &mut FrameData, image: &Arc<RenderedImage>, x: f32, y: f32) {
+    frame.sprites.push(Sprite {
+        image: image.clone(),
+        position: Vector2::new(x, y),
+        anchor: SpriteAnchor::TopLeft,
+    });
+}
+
+fn append_centered_text(frame: &mut FrameData, image: &Arc<RenderedImage>, y: f32) {
+    append_text(
+        frame,
+        image,
+        (SCREEN_WIDTH as f32 - image.width as f32) * 0.5,
+        y,
+    );
+}
+
+fn append_actor_sprite(frame: &mut FrameData, image: Arc<RenderedImage>, center: Vector2) {
+    frame.sprites.push(Sprite {
+        image,
+        position: center,
+        anchor: SpriteAnchor::Center,
+    });
+}
+
+impl Level7State {
+    fn new() -> Self {
+        Self {
+            title_screen: TitleScreenState::new(),
             gameplay: None,
             events: vec![GameEvent::TitleScreenEntered],
         }
@@ -1986,42 +1761,32 @@ impl Level7State {
 
             if gameplay.return_to_title_requested {
                 self.gameplay = None;
-                self.title_screen = TitleScreenState::new(self.config.buttons);
+                self.title_screen = TitleScreenState::new();
                 self.events.push(GameEvent::TitleScreenEntered);
             }
             return;
         }
 
-        self.title_screen.update(input.mouse_position);
+        self.title_screen.update(dt, input.mouse_position);
         let should_start = self
             .title_screen
             .start_requested(input.start_requested, input.mouse_click_position);
 
-        if input.mouse_click_position.is_some_and(|position| {
-            self.config.buttons
-                && self
-                    .title_screen
-                    .button
-                    .as_ref()
-                    .is_some_and(|button| button.contains(position))
-        }) {
+        if input
+            .mouse_click_position
+            .is_some_and(|position| self.title_screen.click_starts(position))
+        {
             self.events.push(GameEvent::ButtonClicked);
         }
 
         if should_start {
-            self.gameplay = Some(Level6State::new(Level6Config::level7()));
+            self.gameplay = Some(Level6State::new());
             self.events.push(GameEvent::GameStarted);
         }
     }
 
     fn drain_events(&mut self) -> Vec<GameEvent> {
         std::mem::take(&mut self.events)
-    }
-
-    fn easter_egg_active(&self) -> bool {
-        self.gameplay
-            .as_ref()
-            .is_some_and(Level6State::easter_egg_active)
     }
 
     fn append_renderables(&self, frame: &mut FrameData) {
@@ -2060,246 +1825,23 @@ fn button_image(width: u32, height: u32, fill: [u8; 4], border: [u8; 4]) -> Arc<
     })
 }
 
-fn sprite_draw_position(position: Vector2) -> Vector2 {
-    position - Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        BlinkFeedback, Game, GameEvent, Level4Action, Level4State, Level5State, Level6Config,
-        Level6State, Scene, Stage, UpdateInput, sprite_draw_position,
+        BlinkFeedback, Game, GameEvent, Level6State, ORIGINAL_FRAME_TIME, SecretModeFlags,
+        TitleAttractScene, TitleScreenState, UpdateInput,
     };
     use crate::{
         actors::EntityKind,
-        constants::{SCREEN_HEIGHT, SCREEN_WIDTH, TILE_HEIGHT, TILE_WIDTH},
-        nodes::NodeGroup,
+        constants::{TILE_HEIGHT, TILE_WIDTH},
         pacman::Direction,
-        pellets::PelletGroup,
         render::{FrameData, SpriteAnchor},
+        sprites::PacmanSprites,
         vector::Vector2,
     };
 
-    fn gameplay_node_count() -> usize {
-        let mut nodes = NodeGroup::pacman_maze();
-        let home = nodes.create_home_nodes(11.5, 14.0);
-        nodes.connect_home_nodes(home, (12.0, 14.0), Direction::Left);
-        nodes.connect_home_nodes(home, (15.0, 14.0), Direction::Right);
-        nodes.node_count()
-    }
-
-    #[test]
-    fn nodes_stage_renders_graph_and_pacman() {
-        let game = Game::new(Stage::Nodes);
-        let frame = game.frame();
-
-        assert!(!frame.lines.is_empty());
-        assert_eq!(frame.circles.len(), 8);
-    }
-
-    #[test]
-    fn reversible_stage_updates_without_panicking() {
-        let mut game = Game::new(Stage::NodeMovement3);
-        game.update(0.2, Direction::Right, false);
-        game.update(0.2, Direction::Left, false);
-
-        let frame = game.frame();
-        assert_eq!(frame.circles.len(), 8);
-    }
-
-    #[test]
-    fn pellets_stage_renders_nodes_pellets_and_pacman() {
-        let game = Game::new(Stage::Pellets);
-        let frame = game.frame();
-
-        assert_eq!(
-            frame.circles.len(),
-            NodeGroup::pacman_maze().node_count() + PelletGroup::maze1().len() + 1
-        );
-        assert!(!frame.lines.is_empty());
-    }
-
-    #[test]
-    fn eating_pellets_stage_consumes_the_starting_pellet() {
-        let mut game = Game::new(Stage::EatingPellets);
-        let before = game.frame().circles.len();
-
-        game.update(0.0, Direction::Stop, false);
-        let after = game.frame().circles.len();
-
-        assert_eq!(
-            before,
-            NodeGroup::pacman_maze().node_count() + PelletGroup::maze1().len() + 1
-        );
-        assert_eq!(after, before - 1);
-    }
-
-    #[test]
-    fn level3_stage_renders_ghosts_pellets_and_pacman() {
-        let game = Game::new(Stage::Level3);
-        let frame = game.frame();
-
-        assert_eq!(
-            frame.circles.len(),
-            gameplay_node_count() + PelletGroup::maze1().len() + 2
-        );
-        assert!(!frame.lines.is_empty());
-    }
-
-    #[test]
-    fn level3_stage_updates_without_panicking() {
-        let mut game = Game::new(Stage::Level3);
-
-        game.update(0.1, Direction::Right, false);
-        game.update(0.1, Direction::Stop, false);
-
-        let frame = game.frame();
-        let initial = gameplay_node_count() + PelletGroup::maze1().len() + 2;
-        assert!(frame.circles.len() < initial);
-        assert!(frame.circles.len() >= initial.saturating_sub(10));
-    }
-
-    #[test]
-    fn level4_stage_starts_paused_with_all_entities_visible() {
-        let game = Game::new(Stage::Level4);
-        let frame = game.frame();
-
-        assert_eq!(
-            frame.circles.len(),
-            gameplay_node_count() + PelletGroup::maze1().len() + 5
-        );
-        assert!(!frame.lines.is_empty());
-    }
-
-    #[test]
-    fn level4_player_pause_hides_pacman_and_ghosts() {
-        let mut game = Game::new(Stage::Level4);
-
-        game.update(0.0, Direction::Stop, true);
-        game.update(0.0, Direction::Stop, true);
-
-        let frame = game.frame();
-        assert_eq!(
-            frame.circles.len(),
-            gameplay_node_count() + PelletGroup::maze1().len()
-        );
-    }
-
-    #[test]
-    fn timed_pause_ignores_player_pause_requests() {
-        let mut state = Level4State::new();
-        state
-            .pause
-            .start_timed_pause(1.0, Level4Action::ShowEntities);
-        state.hide_entities();
-
-        state.update(0.0, Direction::Stop, true);
-
-        let mut frame = FrameData::default();
-        state.append_renderables(&mut frame);
-        assert_eq!(
-            frame.circles.len(),
-            gameplay_node_count() + PelletGroup::maze1().len()
-        );
-    }
-
-    #[test]
-    fn level4_starts_on_level_one() {
-        let state = Level4State::new();
-
-        assert_eq!(state.level, 1);
-    }
-
-    #[test]
-    fn level5_stage_renders_background_and_sprites() {
-        let game = Game::new(Stage::Level5);
-        let frame = game.frame();
-
-        assert!(frame.background.is_some());
-        assert!(frame.lines.is_empty());
-        assert!(frame.sprites.len() >= 10);
-    }
-
-    #[test]
-    fn level5_starts_on_level_one() {
-        let state = Level5State::new();
-
-        assert_eq!(state.level, 1);
-    }
-
-    #[test]
-    fn level5_sprite_positions_match_tutorial_entity_offset() {
-        let state = Level5State::new();
-        let mut frame = FrameData::default();
-        state.append_renderables(&mut frame);
-
-        let expected_offset = Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0);
-        assert_eq!(
-            sprite_draw_position(state.pacman.position()),
-            state.pacman.position() - expected_offset
-        );
-
-        let pacman_sprite = &frame.sprites[0];
-        assert_eq!(pacman_sprite.anchor, SpriteAnchor::TopLeft);
-        assert_eq!(
-            pacman_sprite.position,
-            state.pacman.position() - expected_offset
-        );
-
-        for (sprite, ghost) in frame.sprites[1..5].iter().zip(state.ghosts.iter()) {
-            assert_eq!(sprite.anchor, SpriteAnchor::TopLeft);
-            assert_eq!(sprite.position, ghost.position() - expected_offset);
-        }
-    }
-
-    #[test]
-    fn level5_updates_the_score_display_when_points_are_added() {
-        let mut state = Level5State::new();
-        state.update_score(10);
-
-        assert_eq!(state.score, 10);
-    }
-
-    #[test]
-    fn level6_stage_renders_background_and_sprites() {
-        let game = Game::new(Stage::MoreMazes);
-        let frame = game.frame();
-
-        assert!(frame.background.is_some());
-        assert!(frame.lines.is_empty());
-        assert!(frame.sprites.len() >= 10);
-    }
-
-    #[test]
-    fn level6_uses_the_second_maze_on_level_two() {
-        let state = Level6State::start_level(2, 5, 0, Vec::new(), Level6Config::more_mazes());
-
-        assert_eq!(state.maze_spec.name, "maze2");
-    }
-
-    #[test]
-    fn level6_updates_the_death_animation_while_paused() {
-        let mut state = Level6State::new(Level6Config::pacman_death());
-        let before = state.pacman_sprites.current();
-        state.pacman.die();
-
-        state.update(0.2, Direction::Stop, false, &[]);
-
-        assert_ne!(before.pixels, state.pacman_sprites.current().pixels);
-    }
-
-    #[test]
-    fn level7_title_screen_emits_an_entered_event() {
-        let mut game = Game::new(Stage::AddTitleScreen);
-
-        assert_eq!(game.drain_events(), vec![GameEvent::TitleScreenEntered]);
-    }
-
-    #[test]
-    fn level7_enter_starts_the_gameplay_screen() {
-        let mut game = Game::new(Stage::AddTitleScreen);
+    fn start_game(game: &mut Game) {
         let _ = game.drain_events();
-
         game.update_with_input(
             0.0,
             UpdateInput {
@@ -2308,17 +1850,32 @@ mod tests {
                 ..UpdateInput::default()
             },
         );
+        assert_eq!(game.drain_events(), vec![GameEvent::GameStarted]);
+    }
 
-        let events = game.drain_events();
-        assert_eq!(events, vec![GameEvent::GameStarted]);
+    #[test]
+    fn level7_title_screen_emits_an_entered_event() {
+        let mut game = Game::new();
+
+        assert_eq!(game.drain_events(), vec![GameEvent::TitleScreenEntered]);
+    }
+
+    #[test]
+    fn level7_enter_starts_the_gameplay_screen() {
+        let mut game = Game::new();
+        start_game(&mut game);
+
         assert!(game.frame().background.is_some());
     }
 
     #[test]
     fn level7_button_click_starts_the_gameplay_screen() {
-        let mut game = Game::new(Stage::AddButtons);
+        let mut game = Game::new();
         let _ = game.drain_events();
-        let button_center = Vector2::new(SCREEN_WIDTH as f32 / 2.0, SCREEN_HEIGHT as f32 / 2.0);
+        let button_center = Vector2::new(
+            game.state.title_screen.button.position.x + game.state.title_screen.button.size.x * 0.5,
+            game.state.title_screen.button.position.y + game.state.title_screen.button.size.y * 0.5,
+        );
 
         game.update_with_input(
             0.0,
@@ -2330,9 +1887,8 @@ mod tests {
             },
         );
 
-        let events = game.drain_events();
         assert_eq!(
-            events,
+            game.drain_events(),
             vec![GameEvent::ButtonClicked, GameEvent::GameStarted]
         );
         assert!(game.frame().background.is_some());
@@ -2340,9 +1896,12 @@ mod tests {
 
     #[test]
     fn level7_button_click_uses_the_click_position() {
-        let mut game = Game::new(Stage::AddButtons);
+        let mut game = Game::new();
         let _ = game.drain_events();
-        let button_center = Vector2::new(SCREEN_WIDTH as f32 / 2.0, SCREEN_HEIGHT as f32 / 2.0);
+        let button_center = Vector2::new(
+            game.state.title_screen.button.position.x + game.state.title_screen.button.size.x * 0.5,
+            game.state.title_screen.button.position.y + game.state.title_screen.button.size.y * 0.5,
+        );
 
         game.update_with_input(
             0.0,
@@ -2353,16 +1912,233 @@ mod tests {
             },
         );
 
-        let events = game.drain_events();
         assert_eq!(
-            events,
+            game.drain_events(),
             vec![GameEvent::ButtonClicked, GameEvent::GameStarted]
         );
     }
 
     #[test]
-    fn q_still_quits_when_secret_mode_is_inactive() {
-        let mut game = Game::new(Stage::Level7);
+    fn level7_gameplay_renders_background_and_sprites() {
+        let mut game = Game::new();
+        start_game(&mut game);
+
+        let frame = game.frame();
+        assert!(frame.background.is_some());
+        assert!(frame.sprites.len() >= 5);
+    }
+
+    #[test]
+    fn title_screen_cycles_through_midway_attract_scenes() {
+        let mut title = TitleScreenState::new();
+
+        title.update(TitleAttractScene::Title.duration() + 0.1, None);
+        assert_eq!(title.scene, TitleAttractScene::Scoring);
+
+        title.update(TitleAttractScene::Scoring.duration() + 0.1, None);
+        assert_eq!(title.scene, TitleAttractScene::Nicknames);
+
+        title.update(TitleAttractScene::Nicknames.duration() + 0.1, None);
+        assert_eq!(title.scene, TitleAttractScene::Title);
+    }
+
+    #[test]
+    fn enter_can_start_from_scoring_scene() {
+        let mut game = Game::new();
+        let _ = game.drain_events();
+        game.state
+            .title_screen
+            .update(TitleAttractScene::Title.duration() + 0.1, None);
+        assert_eq!(game.state.title_screen.scene, TitleAttractScene::Scoring);
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                start_requested: true,
+                ..UpdateInput::default()
+            },
+        );
+
+        assert_eq!(game.drain_events(), vec![GameEvent::GameStarted]);
+        assert!(game.frame().background.is_some());
+    }
+
+    #[test]
+    fn scoring_scene_does_not_render_the_start_button() {
+        let mut title = TitleScreenState::new();
+        title.update(TitleAttractScene::Title.duration() + 0.1, None);
+
+        let mut frame = FrameData::default();
+        title.append_renderables(&mut frame);
+
+        assert!(
+            frame.sprites.iter().all(|sprite| sprite.image.width != 120 || sprite.image.height != 60),
+            "the title button should not be rendered on the scoring scene"
+        );
+    }
+
+    #[test]
+    fn arcade_mode_keeps_the_original_maze_on_level_two() {
+        let state = Level6State::start_level(2, 5, 0, Vec::new());
+
+        assert_eq!(state.maze_spec.name, "maze1");
+    }
+
+    #[test]
+    fn level7_updates_the_death_animation_while_paused() {
+        let mut state = Level6State::new();
+        let before = state.pacman_sprites.current();
+        state.pacman.die();
+
+        state.update(0.2, Direction::Stop, false, &[]);
+
+        assert_ne!(before.pixels, state.pacman_sprites.current().pixels);
+    }
+
+    #[test]
+    fn gameplay_sprites_use_arcade_draw_offset() {
+        let state = Level6State::new();
+        let mut frame = FrameData::default();
+        state.append_renderables(&mut frame);
+
+        assert_eq!(state.pacman.position().as_tuple(), (216.0, 416.0));
+        let pacman_sprite = &frame.sprites[0];
+        assert_eq!(pacman_sprite.anchor, SpriteAnchor::TopLeft);
+        assert_eq!(
+            pacman_sprite.position,
+            state.pacman.position() - Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0)
+        );
+    }
+
+    #[test]
+    fn gameplay_pacman_sprite_tracks_direction() {
+        let mut state = Level6State::new();
+        state.pause.set_paused(false);
+
+        let left_pixels = PacmanSprites::new()
+            .update_for_state(0.1, Direction::Left, true)
+            .pixels
+            .clone();
+
+        state.update(0.1, Direction::Left, false, &[]);
+        let mut frame = FrameData::default();
+        state.append_renderables(&mut frame);
+        assert_eq!(state.pacman.direction(), Direction::Left);
+        assert_eq!(state.last_pacman_sprite_direction, Direction::Left);
+        assert_eq!(state.pacman_sprites.current().pixels, left_pixels);
+        assert_eq!(frame.sprites[0].image.pixels, left_pixels);
+    }
+
+    #[test]
+    fn frightened_mode_temporarily_allows_red_zone_up_turns() {
+        let mut state = Level6State::new();
+        let red_zone = state
+            .nodes
+            .get_node_from_tiles(12.0, 26.0)
+            .expect("red-zone node should exist");
+
+        assert!(
+            !state
+                .nodes
+                .can_travel(red_zone, Direction::Up, EntityKind::Blinky)
+        );
+
+        state.ghosts.start_freight();
+        state.sync_freight_events(false);
+
+        assert!(
+            state
+                .nodes
+                .can_travel(red_zone, Direction::Up, EntityKind::Blinky)
+        );
+
+        state.ghosts.end_freight();
+        state.sync_freight_events(true);
+
+        assert!(
+            !state
+                .nodes
+                .can_travel(red_zone, Direction::Up, EntityKind::Blinky)
+        );
+    }
+
+    #[test]
+    fn freight_mode_keeps_red_zone_override_after_ghost_reset() {
+        let mut state = Level6State::new();
+        let red_zone = state
+            .nodes
+            .get_node_from_tiles(12.0, 26.0)
+            .expect("red-zone node should exist");
+
+        state.ghosts.start_freight();
+        state.sync_freight_events(false);
+        state.reset_ghosts_to_start_positions();
+        state.sync_freight_events(true);
+
+        assert!(
+            state
+                .nodes
+                .can_travel(red_zone, Direction::Up, EntityKind::Blinky)
+        );
+    }
+
+    #[test]
+    fn freight_mode_keeps_red_zone_override_after_level_rebuild() {
+        let mut state = Level6State::start_level(1, 5, 0, Vec::new());
+        let flags = SecretModeFlags {
+            easter_egg_active: true,
+            easter_egg_force_freight: true,
+            autopilot_active: false,
+        };
+        let red_zone = state
+            .nodes
+            .get_node_from_tiles(12.0, 26.0)
+            .expect("red-zone node should exist");
+
+        state.ghosts.start_freight();
+        state.sync_freight_events(false);
+
+        state = Level6State::start_level(2, 5, 0, Vec::new());
+        state.apply_secret_mode_flags(flags);
+        state.sync_freight_events(true);
+
+        assert!(
+            state
+                .nodes
+                .can_travel(red_zone, Direction::Up, EntityKind::Blinky)
+        );
+    }
+
+    #[test]
+    fn q_quits_when_secret_mode_is_inactive() {
+        let mut game = Game::new();
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['q'],
+                ..UpdateInput::default()
+            },
+        );
+
+        assert!(game.quit_requested());
+    }
+
+    #[test]
+    fn q_quits_even_when_secret_mode_is_active() {
+        let mut game = Game::new();
+        start_game(&mut game);
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['x', 'y', 'z', 'z', 'y'],
+                ..UpdateInput::default()
+            },
+        );
+        let _ = game.drain_events();
 
         game.update_with_input(
             0.0,
@@ -2378,7 +2154,7 @@ mod tests {
 
     #[test]
     fn xyzzy_toggles_secret_mode_and_starts_blink_feedback() {
-        let mut state = Level6State::new(Level6Config::level7());
+        let mut state = Level6State::new();
 
         state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
 
@@ -2398,8 +2174,29 @@ mod tests {
     }
 
     #[test]
-    fn secret_q_toggles_freight_mode_without_requesting_quit() {
-        let mut game = Game::new(Stage::MoreMazes);
+    fn secret_a_toggles_autopilot_and_secret_mode_off_disables_it() {
+        let mut state = Level6State::new();
+
+        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+        state.handle_easter_egg_input(&['a']);
+        assert!(state.easter_egg_autopilot.active());
+
+        state.handle_easter_egg_input(&['a']);
+        assert!(!state.easter_egg_autopilot.active());
+
+        state.handle_easter_egg_input(&['a']);
+        assert!(state.easter_egg_autopilot.active());
+
+        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+        assert!(!state.easter_egg_active);
+        assert!(!state.easter_egg_autopilot.active());
+    }
+
+    #[test]
+    fn secret_f_toggles_freight_mode_without_requesting_quit() {
+        let mut game = Game::new();
+        start_game(&mut game);
+
         game.update_with_input(
             0.0,
             UpdateInput {
@@ -2414,24 +2211,51 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['q'],
+                typed_chars: vec!['f'],
+                ..UpdateInput::default()
+            },
+        );
+        assert_eq!(game.drain_events(), vec![GameEvent::FreightModeStarted]);
+
+        let state = game
+            .state
+            .gameplay
+            .as_ref()
+            .expect("expected gameplay state");
+        assert!(state.easter_egg_force_freight);
+        assert!(!game.quit_requested());
+
+        game.update_with_input(
+            0.0,
+            UpdateInput {
+                requested_direction: Direction::Stop,
+                typed_chars: vec!['f'],
                 ..UpdateInput::default()
             },
         );
 
-        let Scene::Level6(state) = &game.scene else {
-            panic!("expected level 6 scene");
-        };
-        assert!(state.easter_egg_force_freight);
-        assert!(!game.quit_requested());
+        assert_eq!(game.drain_events(), vec![GameEvent::FreightModeEnded]);
     }
 
     #[test]
-    fn secret_p_teleports_pacman_to_the_safest_node() {
-        let mut state = Level6State::new(Level6Config::level7());
+    fn freight_events_track_direct_mode_transitions() {
+        let mut state = Level6State::new();
+
+        state.ghosts.start_freight();
+        state.sync_freight_events(false);
+        assert_eq!(state.drain_events(), vec![GameEvent::FreightModeStarted]);
+
+        state.ghosts.end_freight();
+        state.sync_freight_events(true);
+        assert_eq!(state.drain_events(), vec![GameEvent::FreightModeEnded]);
+    }
+
+    #[test]
+    fn secret_t_teleports_pacman_to_the_safest_node() {
+        let mut state = Level6State::new();
         state.easter_egg_active = true;
 
-        state.handle_easter_egg_input(&['p']);
+        state.handle_easter_egg_input(&['t']);
 
         let expected = state
             .nodes
@@ -2454,18 +2278,97 @@ mod tests {
     }
 
     #[test]
-    fn secret_y_sends_ghosts_back_to_their_start_positions() {
-        let mut state = Level6State::new(Level6Config::level7());
+    fn secret_r_sends_ghosts_back_to_their_start_positions() {
+        let mut state = Level6State::new();
         state.easter_egg_active = true;
-        let expected_positions: Vec<_> = Level6State::new(Level6Config::level7())
+        let expected_positions: Vec<_> = Level6State::new()
             .ghosts
             .iter()
             .map(|ghost| ghost.position())
             .collect();
 
-        state.handle_easter_egg_input(&['y']);
+        state.handle_easter_egg_input(&['r']);
 
         let reset_positions: Vec<_> = state.ghosts.iter().map(|ghost| ghost.position()).collect();
         assert_eq!(reset_positions, expected_positions);
+    }
+
+    fn run_secret_autopilot_until_done(state: &mut Level6State, step_limit: usize) -> bool {
+        let dt = ORIGINAL_FRAME_TIME;
+        for _ in 0..step_limit {
+            state.update_headless(dt);
+            let events = state.drain_events();
+            if events.contains(&GameEvent::PacmanDied) {
+                return false;
+            }
+            if events.contains(&GameEvent::LevelCompleted) || state.pellets.is_empty() {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn single_pellet_reset_state(target: Vector2) -> Level6State {
+        let mut state = Level6State::new();
+        let positions: Vec<_> = state
+            .pellets
+            .iter()
+            .map(|pellet| pellet.position())
+            .collect();
+        for position in positions {
+            if position != target {
+                let removed = state.pellets.try_eat(position, 0.0);
+                assert!(removed.is_some(), "expected pellet at {position}");
+            }
+        }
+
+        state.reset_level();
+        state.pause.set_paused(false);
+        state.easter_egg_active = true;
+        state.easter_egg_autopilot.toggle();
+        state
+    }
+
+    #[test]
+    #[ignore = "expensive end-to-end autopilot simulation"]
+    fn secret_autopilot_clears_the_level_without_losing_a_life() {
+        fastrand::seed(7);
+
+        let mut state = Level6State::new();
+        state.pause.set_paused(false);
+        state.easter_egg_active = true;
+        state.easter_egg_autopilot.toggle();
+        let starting_lives = state.lives;
+        if !run_secret_autopilot_until_done(&mut state, 8_000) {
+            panic!(
+                "autopilot died after eating {} pellets: {:?}",
+                state.pellets.num_eaten(),
+                state.headless_death_snapshot()
+            );
+        }
+        assert_eq!(state.lives, starting_lives);
+    }
+
+    #[test]
+    #[ignore = "expensive secret autopilot regression"]
+    fn secret_autopilot_handles_top_centre_last_pellet_resets() {
+        let failing_positions = [
+            Vector2::new(192.0, 80.0),
+            Vector2::new(240.0, 80.0),
+            Vector2::new(192.0, 96.0),
+            Vector2::new(240.0, 96.0),
+            Vector2::new(192.0, 112.0),
+        ];
+
+        for target in failing_positions {
+            fastrand::seed(7);
+            let mut state = single_pellet_reset_state(target);
+            assert!(
+                run_secret_autopilot_until_done(&mut state, 1_200),
+                "autopilot failed to clear single pellet at {:?}",
+                target.as_tuple()
+            );
+        }
     }
 }

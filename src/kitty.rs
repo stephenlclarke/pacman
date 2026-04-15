@@ -19,6 +19,8 @@ const ESCAPE_END: &str = "\x1b\\";
 pub struct KittyGraphics {
     placement_cols: u16,
     placement_rows: u16,
+    png_buffer: Vec<u8>,
+    base64_buffer: String,
 }
 
 impl KittyGraphics {
@@ -26,6 +28,8 @@ impl KittyGraphics {
         Self {
             placement_cols,
             placement_rows,
+            png_buffer: Vec::new(),
+            base64_buffer: String::new(),
         }
     }
 
@@ -47,14 +51,15 @@ impl KittyGraphics {
         self.placement_rows = placement_rows;
     }
 
-    pub fn draw_frame(&self, stdout: &mut Stdout, image: &RenderedImage) -> Result<()> {
-        let png = encode_png(image)?;
-        let encoded = STANDARD.encode(png);
-        let chunk_count = encoded.len().div_ceil(CHUNK_SIZE);
+    pub fn draw_frame(&mut self, stdout: &mut Stdout, image: &RenderedImage) -> Result<()> {
+        encode_png_into(image, &mut self.png_buffer)?;
+        self.base64_buffer.clear();
+        STANDARD.encode_string(&self.png_buffer, &mut self.base64_buffer);
+        let chunk_count = self.base64_buffer.len().div_ceil(CHUNK_SIZE);
 
         queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
 
-        for (index, chunk) in encoded.as_bytes().chunks(CHUNK_SIZE).enumerate() {
+        for (index, chunk) in self.base64_buffer.as_bytes().chunks(CHUNK_SIZE).enumerate() {
             let more = if index + 1 == chunk_count { 0 } else { 1 };
             if index == 0 {
                 write!(
@@ -106,17 +111,22 @@ fn validate_environment(term: &str, is_terminal: bool) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 fn encode_png(image: &RenderedImage) -> Result<Vec<u8>> {
     let mut encoded = Vec::new();
-    {
-        let mut encoder = Encoder::new(&mut encoded, image.width, image.height);
-        encoder.set_color(ColorType::Rgba);
-        encoder.set_depth(BitDepth::Eight);
-        encoder.set_compression(Compression::Fast);
-        let mut writer = encoder.write_header()?;
-        writer.write_image_data(&image.pixels)?;
-    }
+    encode_png_into(image, &mut encoded)?;
     Ok(encoded)
+}
+
+fn encode_png_into(image: &RenderedImage, encoded: &mut Vec<u8>) -> Result<()> {
+    encoded.clear();
+    let mut encoder = Encoder::new(encoded, image.width, image.height);
+    encoder.set_color(ColorType::Rgba);
+    encoder.set_depth(BitDepth::Eight);
+    encoder.set_compression(Compression::Fast);
+    let mut writer = encoder.write_header()?;
+    writer.write_image_data(&image.pixels)?;
+    Ok(())
 }
 
 #[cfg(test)]
