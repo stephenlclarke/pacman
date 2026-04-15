@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn renderer_uses_tutorial_screen_size_as_a_minimum() {
+    fn renderer_uses_the_logical_screen_size_as_a_minimum() {
         let renderer = Renderer::new(TerminalGeometry {
             cols: 10,
             rows: 10,

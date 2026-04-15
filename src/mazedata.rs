@@ -3,12 +3,11 @@ use crate::{actors::GhostKind, pacman::Direction};
 type TilePosition = (f32, f32);
 type PortalPair = (TilePosition, TilePosition);
 
-const MAZE1: &str = include_str!("../assets/arcade/maze-logic.txt");
-const MAZE1_METADATA: &str = include_str!("../assets/arcade/maze-metadata.txt");
+const ARCADE_MAZE_LAYOUT: &str = include_str!("../assets/arcade/maze-logic.txt");
+const ARCADE_MAZE_METADATA: &str = include_str!("../assets/arcade/maze-metadata.txt");
 
 #[derive(Clone, Copy, Debug)]
 pub struct MazeSpec {
-    pub name: &'static str,
     pub layout: &'static str,
     pub portal_pairs: [PortalPair; 1],
     pub home_offset: TilePosition,
@@ -26,8 +25,8 @@ pub struct MazeSpec {
 }
 
 impl MazeSpec {
-    pub fn for_level(_level: u32) -> Self {
-        maze1()
+    pub fn arcade() -> Self {
+        arcade_maze()
     }
 
     pub fn add_offset(self, x: f32, y: f32) -> (f32, f32) {
@@ -74,11 +73,10 @@ impl MazeSpec {
     }
 }
 
-fn maze1() -> MazeSpec {
-    let metadata = maze1_metadata();
+fn arcade_maze() -> MazeSpec {
+    let metadata = arcade_maze_metadata();
     MazeSpec {
-        name: "maze1",
-        layout: MAZE1,
+        layout: ARCADE_MAZE_LAYOUT,
         portal_pairs: [metadata.portal_pair],
         home_offset: metadata.home_offset,
         home_connect_left: metadata.home_connect_left,
@@ -112,8 +110,8 @@ struct MazeMetadata {
     ghost_deny_up: [TilePosition; 4],
 }
 
-fn maze1_metadata() -> MazeMetadata {
-    parse_maze_metadata(MAZE1_METADATA)
+fn arcade_maze_metadata() -> MazeMetadata {
+    parse_maze_metadata(ARCADE_MAZE_METADATA)
 }
 
 fn parse_maze_metadata(text: &str) -> MazeMetadata {
@@ -206,17 +204,19 @@ fn parse_position(value: &str) -> TilePosition {
 
 #[cfg(test)]
 mod tests {
-    use super::{MazeSpec, maze1_metadata};
+    use super::{MazeSpec, arcade_maze_metadata};
 
     #[test]
-    fn single_maze_mode_stays_on_maze_one() {
-        assert_eq!(MazeSpec::for_level(1).name, "maze1");
-        assert_eq!(MazeSpec::for_level(2).name, "maze1");
+    fn arcade_maze_spec_uses_the_embedded_layout() {
+        let maze = MazeSpec::arcade();
+
+        assert!(maze.layout.contains("P"));
+        assert_eq!(maze.portal_pairs, [((0.0, 17.0), (27.0, 17.0))]);
     }
 
     #[test]
     fn extracted_arcade_metadata_matches_expected_positions() {
-        let metadata = maze1_metadata();
+        let metadata = arcade_maze_metadata();
 
         assert_eq!(metadata.portal_pair, ((0.0, 17.0), (27.0, 17.0)));
         assert_eq!(metadata.home_offset, (11.5, 14.0));

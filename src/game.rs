@@ -8,8 +8,8 @@ use crate::{
     },
     autopilot::{AutoPilot, AutoPilotContext},
     constants::{
-        BUTTON_CLICK, BUTTON_COLOR, BUTTON_HOVER, ORANGE, PINK, RED, SCREEN_HEIGHT,
-        SCREEN_WIDTH, TEAL, TILE_HEIGHT, TILE_WIDTH, WHITE, YELLOW,
+        BUTTON_CLICK, BUTTON_COLOR, BUTTON_HOVER, ORANGE, PINK, RED, SCREEN_HEIGHT, SCREEN_WIDTH,
+        TEAL, TILE_HEIGHT, TILE_WIDTH, WHITE, YELLOW,
     },
     fruit::Fruit,
     ghosts::{GhostGroup, GhostGroupUpdateContext},
@@ -26,7 +26,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Level6Action {
+enum GameplayAction {
     ShowEntities,
     ResetLevel,
     NextLevel,
@@ -106,18 +106,18 @@ pub struct UpdateInput {
 
 #[derive(Debug)]
 pub struct Game {
-    state: Level7State,
+    state: AppState,
     quit_requested: bool,
 }
 
 #[derive(Clone, Debug)]
-struct Level6State {
+struct GameplayState {
     nodes: NodeGroup,
     pacman: NodePacman,
     pellets: PelletGroup,
     ghosts: GhostGroup,
     fruit: Option<Fruit>,
-    pause: PauseController<Level6Action>,
+    pause: PauseController<GameplayAction>,
     level: u32,
     lives: u32,
     score: u32,
@@ -211,16 +211,16 @@ struct AttractNicknameRow {
 }
 
 #[derive(Clone, Debug)]
-struct Level7State {
+struct AppState {
     title_screen: TitleScreenState,
-    gameplay: Option<Level6State>,
+    gameplay: Option<GameplayState>,
     events: Vec<GameEvent>,
 }
 
 impl Game {
     pub fn new() -> Self {
         Self {
-            state: Level7State::new(),
+            state: AppState::new(),
             quit_requested: false,
         }
     }
@@ -258,7 +258,7 @@ impl Default for Game {
 pub fn run_headless_autopilot(seed: u64, max_steps: usize) -> HeadlessAutopilotReport {
     fastrand::seed(seed);
 
-    let mut state = Level6State::new();
+    let mut state = GameplayState::new();
     state.pause.set_paused(false);
     state.easter_egg_active = true;
     state.easter_egg_autopilot.set_active(true);
@@ -390,7 +390,7 @@ fn build_gameplay_level(
     (nodes, pacman, pellets, ghosts)
 }
 
-impl Level6State {
+impl GameplayState {
     const FLASH_TIME: f32 = 0.2;
     const EASTER_EGG_CODE: [char; 5] = ['x', 'y', 'z', 'z', 'y'];
     const READY_TIME: f32 = 3.0;
@@ -400,7 +400,7 @@ impl Level6State {
     }
 
     fn start_level(level: u32, lives: u32, score: u32, fruit_captured: Vec<usize>) -> Self {
-        let maze_spec = MazeSpec::for_level(level);
+        let maze_spec = MazeSpec::arcade();
         let (nodes, pacman, pellets, ghosts) = build_gameplay_level(maze_spec, level);
         let maze_sprites = MazeSprites::from_layout(maze_spec.layout);
         let background_norm = maze_sprites.construct_background(level);
@@ -452,7 +452,7 @@ impl Level6State {
         };
         state
             .pause
-            .start_timed_pause(Self::READY_TIME, Level6Action::ShowEntities);
+            .start_timed_pause(Self::READY_TIME, GameplayAction::ShowEntities);
         state.apply_level_start_release_rules();
         state
     }
@@ -941,7 +941,7 @@ impl Level6State {
             self.flash_timer = 0.0;
             self.background = self.background_norm.clone();
             self.hide_entities();
-            self.pause.start_timed_pause(3.0, Level6Action::NextLevel);
+            self.pause.start_timed_pause(3.0, GameplayAction::NextLevel);
         }
     }
 
@@ -966,7 +966,7 @@ impl Level6State {
         if self.pellets.is_empty() {
             self.easter_egg_autopilot.invalidate_route();
             self.events.push(GameEvent::LevelCompleted);
-            self.pause.start_timed_pause(3.0, Level6Action::NextLevel);
+            self.pause.start_timed_pause(3.0, GameplayAction::NextLevel);
         }
     }
 
@@ -998,7 +998,7 @@ impl Level6State {
                     ghost_position.y,
                 );
                 self.pause
-                    .start_timed_pause(1.0, Level6Action::ShowEntities);
+                    .start_timed_pause(1.0, GameplayAction::ShowEntities);
                 self.ghosts.ghost_mut(ghost_kind).start_spawn(&self.nodes);
                 self.nodes.allow_home_access(ghost_kind.entity());
                 self.ghosts.update_points();
@@ -1017,9 +1017,9 @@ impl Level6State {
                 self.events.push(GameEvent::PacmanDied);
                 let action = if self.lives == 0 {
                     self.text_group.show_status(StatusText::GameOver);
-                    Level6Action::RestartGame
+                    GameplayAction::RestartGame
                 } else {
-                    Level6Action::ResetLevel
+                    GameplayAction::ResetLevel
                 };
                 self.pause.start_timed_pause(3.0, action);
             }
@@ -1046,7 +1046,7 @@ impl Level6State {
             GhostMode::Freight => {
                 self.update_score_headless(ghost_points);
                 self.pause
-                    .start_timed_pause(1.0, Level6Action::ShowEntities);
+                    .start_timed_pause(1.0, GameplayAction::ShowEntities);
                 self.ghosts.ghost_mut(ghost_kind).start_spawn(&self.nodes);
                 self.nodes.allow_home_access(ghost_kind.entity());
                 self.ghosts.update_points();
@@ -1062,9 +1062,9 @@ impl Level6State {
                 self.pacman.die();
                 self.events.push(GameEvent::PacmanDied);
                 let action = if self.lives == 0 {
-                    Level6Action::RestartGame
+                    GameplayAction::RestartGame
                 } else {
-                    Level6Action::ResetLevel
+                    GameplayAction::ResetLevel
                 };
                 self.pause.start_timed_pause(3.0, action);
             }
@@ -1160,14 +1160,14 @@ impl Level6State {
         }
     }
 
-    fn handle_after_pause(&mut self, action: Level6Action) {
+    fn handle_after_pause(&mut self, action: GameplayAction) {
         match action {
-            Level6Action::ShowEntities => {
+            GameplayAction::ShowEntities => {
                 self.text_group.hide_status();
                 self.show_entities();
             }
-            Level6Action::ResetLevel => self.reset_level(),
-            Level6Action::NextLevel => {
+            GameplayAction::ResetLevel => self.reset_level(),
+            GameplayAction::NextLevel => {
                 let flags = self.secret_mode_flags();
                 *self = Self::start_level(
                     self.level + 1,
@@ -1177,17 +1177,17 @@ impl Level6State {
                 );
                 self.apply_secret_mode_flags(flags);
             }
-            Level6Action::RestartGame => {
+            GameplayAction::RestartGame => {
                 self.return_to_title_requested = true;
             }
         }
     }
 
-    fn handle_after_pause_headless(&mut self, action: Level6Action) {
+    fn handle_after_pause_headless(&mut self, action: GameplayAction) {
         match action {
-            Level6Action::ShowEntities => {}
-            Level6Action::ResetLevel => self.reset_level_headless(),
-            Level6Action::NextLevel => {
+            GameplayAction::ShowEntities => {}
+            GameplayAction::ResetLevel => self.reset_level_headless(),
+            GameplayAction::NextLevel => {
                 let flags = self.secret_mode_flags();
                 *self = Self::start_level(
                     self.level + 1,
@@ -1198,7 +1198,7 @@ impl Level6State {
                 self.apply_secret_mode_flags(flags);
                 self.pause.set_paused(false);
             }
-            Level6Action::RestartGame => {
+            GameplayAction::RestartGame => {
                 self.return_to_title_requested = true;
             }
         }
@@ -1220,7 +1220,7 @@ impl Level6State {
         self.show_entities();
         self.text_group.show_status(StatusText::Ready);
         self.pause
-            .start_timed_pause(Self::READY_TIME, Level6Action::ShowEntities);
+            .start_timed_pause(Self::READY_TIME, GameplayAction::ShowEntities);
     }
 
     fn reset_level_headless(&mut self) {
@@ -1627,12 +1627,7 @@ impl TitleScreenState {
         for (index, x) in ghost_positions.into_iter().enumerate() {
             if self.scene_timer >= eaten_times[index] {
                 let score = &self.ghost_score_images[index];
-                append_text(
-                    frame,
-                    score,
-                    x - score.width as f32 * 0.5,
-                    248.0,
-                );
+                append_text(frame, score, x - score.width as f32 * 0.5, 248.0);
             } else {
                 append_actor_sprite(frame, freight_image.clone(), Vector2::new(x, 264.0));
             }
@@ -1659,11 +1654,7 @@ impl TitleScreenState {
             Vector2::new(360.0, 470.0),
         ];
         for (index, position) in fruit_positions.into_iter().enumerate() {
-            append_actor_sprite(
-                frame,
-                self.fruit_sprites.item_image(index),
-                position,
-            );
+            append_actor_sprite(frame, self.fruit_sprites.item_image(index), position);
             let score = &self.fruit_score_images[index];
             append_text(
                 frame,
@@ -1687,9 +1678,9 @@ impl TitleScreenState {
             let progress = (local_time / 0.55).clamp(0.0, 1.0);
             let center_y = 176.0 + index as f32 * 68.0;
             let center_x = -24.0 + progress * 124.0;
-            let ghost_image = self
-                .ghost_sprites
-                .image(row.kind, GhostMode::Chase, Direction::Right, None, None);
+            let ghost_image =
+                self.ghost_sprites
+                    .image(row.kind, GhostMode::Chase, Direction::Right, None, None);
             append_actor_sprite(frame, ghost_image, Vector2::new(center_x, center_y));
 
             if local_time >= 0.2 {
@@ -1701,12 +1692,7 @@ impl TitleScreenState {
 }
 
 impl AttractNicknameRow {
-    fn new(
-        kind: GhostKind,
-        nickname: &str,
-        name: &str,
-        name_color: [u8; 4],
-    ) -> Self {
+    fn new(kind: GhostKind, nickname: &str, name: &str, name_color: [u8; 4]) -> Self {
         Self {
             kind,
             nickname_image: rasterize_text_image(nickname, WHITE, 16.0),
@@ -1740,7 +1726,7 @@ fn append_actor_sprite(frame: &mut FrameData, image: Arc<RenderedImage>, center:
     });
 }
 
-impl Level7State {
+impl AppState {
     fn new() -> Self {
         Self {
             title_screen: TitleScreenState::new(),
@@ -1780,7 +1766,7 @@ impl Level7State {
         }
 
         if should_start {
-            self.gameplay = Some(Level6State::new());
+            self.gameplay = Some(GameplayState::new());
             self.events.push(GameEvent::GameStarted);
         }
     }
@@ -1828,7 +1814,7 @@ fn button_image(width: u32, height: u32, fill: [u8; 4], border: [u8; 4]) -> Arc<
 #[cfg(test)]
 mod tests {
     use super::{
-        BlinkFeedback, Game, GameEvent, Level6State, ORIGINAL_FRAME_TIME, SecretModeFlags,
+        BlinkFeedback, Game, GameEvent, GameplayState, ORIGINAL_FRAME_TIME, SecretModeFlags,
         TitleAttractScene, TitleScreenState, UpdateInput,
     };
     use crate::{
@@ -1854,14 +1840,14 @@ mod tests {
     }
 
     #[test]
-    fn level7_title_screen_emits_an_entered_event() {
+    fn title_screen_emits_an_entered_event() {
         let mut game = Game::new();
 
         assert_eq!(game.drain_events(), vec![GameEvent::TitleScreenEntered]);
     }
 
     #[test]
-    fn level7_enter_starts_the_gameplay_screen() {
+    fn enter_starts_the_gameplay_screen() {
         let mut game = Game::new();
         start_game(&mut game);
 
@@ -1869,7 +1855,7 @@ mod tests {
     }
 
     #[test]
-    fn level7_button_click_starts_the_gameplay_screen() {
+    fn button_click_starts_the_gameplay_screen() {
         let mut game = Game::new();
         let _ = game.drain_events();
         let button_center = Vector2::new(
@@ -1895,7 +1881,7 @@ mod tests {
     }
 
     #[test]
-    fn level7_button_click_uses_the_click_position() {
+    fn button_click_uses_the_click_position() {
         let mut game = Game::new();
         let _ = game.drain_events();
         let button_center = Vector2::new(
@@ -1919,7 +1905,7 @@ mod tests {
     }
 
     #[test]
-    fn level7_gameplay_renders_background_and_sprites() {
+    fn gameplay_renders_background_and_sprites() {
         let mut game = Game::new();
         start_game(&mut game);
 
@@ -1972,21 +1958,27 @@ mod tests {
         title.append_renderables(&mut frame);
 
         assert!(
-            frame.sprites.iter().all(|sprite| sprite.image.width != 120 || sprite.image.height != 60),
+            frame
+                .sprites
+                .iter()
+                .all(|sprite| sprite.image.width != 120 || sprite.image.height != 60),
             "the title button should not be rendered on the scoring scene"
         );
     }
 
     #[test]
     fn arcade_mode_keeps_the_original_maze_on_level_two() {
-        let state = Level6State::start_level(2, 5, 0, Vec::new());
+        let state = GameplayState::start_level(2, 5, 0, Vec::new());
 
-        assert_eq!(state.maze_spec.name, "maze1");
+        assert_eq!(
+            state.maze_spec.layout,
+            crate::mazedata::MazeSpec::arcade().layout
+        );
     }
 
     #[test]
-    fn level7_updates_the_death_animation_while_paused() {
-        let mut state = Level6State::new();
+    fn gameplay_updates_the_death_animation_while_paused() {
+        let mut state = GameplayState::new();
         let before = state.pacman_sprites.current();
         state.pacman.die();
 
@@ -1997,7 +1989,7 @@ mod tests {
 
     #[test]
     fn gameplay_sprites_use_arcade_draw_offset() {
-        let state = Level6State::new();
+        let state = GameplayState::new();
         let mut frame = FrameData::default();
         state.append_renderables(&mut frame);
 
@@ -2006,13 +1998,14 @@ mod tests {
         assert_eq!(pacman_sprite.anchor, SpriteAnchor::TopLeft);
         assert_eq!(
             pacman_sprite.position,
-            state.pacman.position() - Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0)
+            state.pacman.position()
+                - Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0)
         );
     }
 
     #[test]
     fn gameplay_pacman_sprite_tracks_direction() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
         state.pause.set_paused(false);
 
         let left_pixels = PacmanSprites::new()
@@ -2031,7 +2024,7 @@ mod tests {
 
     #[test]
     fn frightened_mode_temporarily_allows_red_zone_up_turns() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
         let red_zone = state
             .nodes
             .get_node_from_tiles(12.0, 26.0)
@@ -2064,7 +2057,7 @@ mod tests {
 
     #[test]
     fn freight_mode_keeps_red_zone_override_after_ghost_reset() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
         let red_zone = state
             .nodes
             .get_node_from_tiles(12.0, 26.0)
@@ -2084,7 +2077,7 @@ mod tests {
 
     #[test]
     fn freight_mode_keeps_red_zone_override_after_level_rebuild() {
-        let mut state = Level6State::start_level(1, 5, 0, Vec::new());
+        let mut state = GameplayState::start_level(1, 5, 0, Vec::new());
         let flags = SecretModeFlags {
             easter_egg_active: true,
             easter_egg_force_freight: true,
@@ -2098,7 +2091,7 @@ mod tests {
         state.ghosts.start_freight();
         state.sync_freight_events(false);
 
-        state = Level6State::start_level(2, 5, 0, Vec::new());
+        state = GameplayState::start_level(2, 5, 0, Vec::new());
         state.apply_secret_mode_flags(flags);
         state.sync_freight_events(true);
 
@@ -2154,7 +2147,7 @@ mod tests {
 
     #[test]
     fn xyzzy_toggles_secret_mode_and_starts_blink_feedback() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
 
         state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
 
@@ -2175,7 +2168,7 @@ mod tests {
 
     #[test]
     fn secret_a_toggles_autopilot_and_secret_mode_off_disables_it() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
 
         state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
         state.handle_easter_egg_input(&['a']);
@@ -2239,7 +2232,7 @@ mod tests {
 
     #[test]
     fn freight_events_track_direct_mode_transitions() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
 
         state.ghosts.start_freight();
         state.sync_freight_events(false);
@@ -2252,7 +2245,7 @@ mod tests {
 
     #[test]
     fn secret_t_teleports_pacman_to_the_safest_node() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
         state.easter_egg_active = true;
 
         state.handle_easter_egg_input(&['t']);
@@ -2279,9 +2272,9 @@ mod tests {
 
     #[test]
     fn secret_r_sends_ghosts_back_to_their_start_positions() {
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
         state.easter_egg_active = true;
-        let expected_positions: Vec<_> = Level6State::new()
+        let expected_positions: Vec<_> = GameplayState::new()
             .ghosts
             .iter()
             .map(|ghost| ghost.position())
@@ -2293,7 +2286,7 @@ mod tests {
         assert_eq!(reset_positions, expected_positions);
     }
 
-    fn run_secret_autopilot_until_done(state: &mut Level6State, step_limit: usize) -> bool {
+    fn run_secret_autopilot_until_done(state: &mut GameplayState, step_limit: usize) -> bool {
         let dt = ORIGINAL_FRAME_TIME;
         for _ in 0..step_limit {
             state.update_headless(dt);
@@ -2309,8 +2302,8 @@ mod tests {
         false
     }
 
-    fn single_pellet_reset_state(target: Vector2) -> Level6State {
-        let mut state = Level6State::new();
+    fn single_pellet_reset_state(target: Vector2) -> GameplayState {
+        let mut state = GameplayState::new();
         let positions: Vec<_> = state
             .pellets
             .iter()
@@ -2335,7 +2328,7 @@ mod tests {
     fn secret_autopilot_clears_the_level_without_losing_a_life() {
         fastrand::seed(7);
 
-        let mut state = Level6State::new();
+        let mut state = GameplayState::new();
         state.pause.set_paused(false);
         state.easter_egg_active = true;
         state.easter_egg_autopilot.toggle();
