@@ -101,7 +101,7 @@ mod tests {
     use super::Vector2;
 
     #[test]
-    fn vector_arithmetic_matches_the_tutorial() {
+    fn vector_arithmetic_behaves_as_expected() {
         let vector = Vector2::new(3.0, 4.0);
         let other = Vector2::new(1.0, -2.0);
 

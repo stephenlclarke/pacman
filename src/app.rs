@@ -212,8 +212,8 @@ mod tests {
 
     #[test]
     fn explicit_arguments_are_rejected() {
-        let error =
-            parse_args(std::iter::once(String::from("level7"))).expect_err("parsing should fail");
+        let error = parse_args(std::iter::once(String::from("legacy-mode")))
+            .expect_err("parsing should fail");
         assert!(
             error
                 .to_string()
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn extra_arguments_are_rejected() {
-        let error = parse_args([String::from("level7"), String::from("extra")].into_iter())
+        let error = parse_args([String::from("legacy-mode"), String::from("extra")].into_iter())
             .expect_err("parsing should fail");
         assert!(
             error

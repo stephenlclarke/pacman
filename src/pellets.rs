@@ -6,7 +6,8 @@ use crate::{
     vector::Vector2,
 };
 
-const MAZE_ONE: &str = include_str!("../assets/arcade/maze-logic.txt");
+#[cfg(test)]
+const ARCADE_MAZE_LAYOUT: &str = include_str!("../assets/arcade/maze-logic.txt");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PelletKind {
@@ -79,10 +80,6 @@ impl Pellet {
 }
 
 impl PelletGroup {
-    pub fn maze1() -> Self {
-        Self::from_layout(MAZE_ONE)
-    }
-
     pub fn from_layout(text: &str) -> Self {
         Self::from_text(text)
     }
@@ -166,12 +163,12 @@ impl PelletGroup {
 
 #[cfg(test)]
 mod tests {
-    use super::{PelletGroup, PelletKind};
+    use super::{ARCADE_MAZE_LAYOUT, PelletGroup, PelletKind};
     use crate::vector::Vector2;
 
     #[test]
     fn maze_one_has_the_expected_pellet_counts() {
-        let pellets = PelletGroup::maze1();
+        let pellets = PelletGroup::from_layout(ARCADE_MAZE_LAYOUT);
 
         assert_eq!(pellets.len(), 244);
         assert_eq!(pellets.power_pellet_count(), 4);
@@ -180,7 +177,7 @@ mod tests {
 
     #[test]
     fn power_pellets_flash_after_their_timer_expires() {
-        let mut pellets = PelletGroup::maze1();
+        let mut pellets = PelletGroup::from_layout(ARCADE_MAZE_LAYOUT);
         let initial_visible = pellets
             .pellets
             .iter()
@@ -201,7 +198,7 @@ mod tests {
 
     #[test]
     fn pellets_can_be_eaten_at_pacmans_position() {
-        let mut pellets = PelletGroup::maze1();
+        let mut pellets = PelletGroup::from_layout(ARCADE_MAZE_LAYOUT);
 
         let pellet = pellets
             .try_eat(Vector2::new(16.0, 64.0), 5.0)

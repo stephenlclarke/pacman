@@ -11,6 +11,28 @@ Run targets:
 Run this inside `kitty`, `ghostty`, `warp` or another terminal that supports the
 Kitty graphics protocol.
 
+## Install
+
+Install directly from git with Cargo:
+
+- `cargo install --git https://github.com/stephenlclarke/pacman pacman`
+
+`cargo install` builds with Cargo's release profile by default. Do not pass
+`--debug` unless you explicitly want a slower debug build.
+
+After installation, run the game with:
+
+- `pacman`
+
+Notes:
+
+- Run it inside `kitty`, `ghostty`, `warp`, or another terminal that supports
+  the Kitty graphics protocol.
+- Download Ghostty: <https://ghostty.org/download>
+- Download Warp: <https://www.warp.dev/download>
+- If `pacman` is not found after installation, ensure `~/.cargo/bin` is on your
+  `PATH`.
+
 ## XYZZY Mode
 
 After starting the game, type `x`, `y`, `z`, `z`, `y` to toggle `xyzzy` mode on

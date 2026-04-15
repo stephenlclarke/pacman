@@ -415,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn game_over_text_uses_the_tutorial_red_color() {
+    fn game_over_text_uses_the_arcade_red_color() {
         let text = TextGroup::new();
 
         assert_eq!(text.game_over.color, RED);
