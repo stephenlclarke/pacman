@@ -1,9 +1,9 @@
-use std::sync::{Arc, OnceLock};
-
-use fontdue::{
-    Font, FontSettings,
-    layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle},
+use std::{
+    io::Cursor,
+    sync::{Arc, OnceLock},
 };
+
+use png::{ColorType, Decoder, Transformations};
 
 use crate::{
     constants::{RED, TILE_HEIGHT, TILE_WIDTH, WHITE, YELLOW},
@@ -11,7 +11,18 @@ use crate::{
     vector::Vector2,
 };
 
-const FONT_BYTES: &[u8] = include_bytes!("../assets/PressStart2P-Regular.ttf");
+const FONT_SHEET_BYTES: &[u8] = include_bytes!("../assets/arcade/font-sheet.png");
+const GLYPH_SIZE: u32 = 8;
+const FONT_COLUMNS: u32 = 16;
+const FONT_FIRST_TILE: u8 = 0x30;
+const FONT_LAST_TILE: u8 = 0x5b;
+const SPACE_TILE: u8 = 0x40;
+const EXCLAMATION_TILE: u8 = 0x5b;
+
+#[derive(Clone, Debug)]
+struct ArcadeFont {
+    glyphs: Vec<Arc<RenderedImage>>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatusText {
@@ -214,55 +225,24 @@ impl TextItem {
 
 pub fn rasterize_text_image(text: &str, color: [u8; 4], size: f32) -> Arc<RenderedImage> {
     let font = shared_font();
-    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-    layout.reset(&LayoutSettings::default());
-    layout.append(&[font.as_ref()], &TextStyle::new(text, size, 0));
-    let glyphs = layout.glyphs();
-
-    let width = glyphs
-        .iter()
-        .map(|glyph| glyph.x as i32 + glyph.width as i32)
-        .max()
-        .unwrap_or(1)
-        .max(1) as u32;
-    let height = glyphs
-        .iter()
-        .map(|glyph| glyph.y as i32 + glyph.height as i32)
-        .max()
-        .unwrap_or(size.ceil() as i32)
-        .max(1) as u32;
-
+    let glyphs = text
+        .chars()
+        .map(|ch| font.glyph_for_char(ch))
+        .collect::<Vec<_>>();
+    let scale = ((size / GLYPH_SIZE as f32).round() as u32).max(1);
+    let width = (glyphs.len() as u32).max(1) * GLYPH_SIZE * scale;
+    let height = GLYPH_SIZE * scale;
     let mut pixels = vec![0; width as usize * height as usize * 4];
-    for glyph in glyphs {
-        let (metrics, bitmap) = font.rasterize_config(glyph.key);
-        let origin_x = glyph.x.round() as i32;
-        let origin_y = glyph.y.round() as i32;
 
-        for row in 0..metrics.height {
-            for col in 0..metrics.width {
-                let alpha = bitmap[row * metrics.width + col];
-                if alpha == 0 {
-                    continue;
-                }
-
-                let x = origin_x + col as i32;
-                let y = origin_y + row as i32;
-                if x < 0 || y < 0 {
-                    continue;
-                }
-                let x = x as usize;
-                let y = y as usize;
-                if x >= width as usize || y >= height as usize {
-                    continue;
-                }
-
-                let index = (y * width as usize + x) * 4;
-                pixels[index] = color[0];
-                pixels[index + 1] = color[1];
-                pixels[index + 2] = color[2];
-                pixels[index + 3] = alpha;
-            }
-        }
+    for (glyph_index, glyph) in glyphs.iter().enumerate() {
+        blit_tinted_scaled(
+            &mut pixels,
+            width,
+            glyph,
+            glyph_index as u32 * GLYPH_SIZE * scale,
+            scale,
+            color,
+        );
     }
 
     Arc::new(RenderedImage {
@@ -272,21 +252,138 @@ pub fn rasterize_text_image(text: &str, color: [u8; 4], size: f32) -> Arc<Render
     })
 }
 
-fn shared_font() -> Arc<Font> {
-    static FONT: OnceLock<Arc<Font>> = OnceLock::new();
-    FONT.get_or_init(|| {
-        Arc::new(
-            Font::from_bytes(FONT_BYTES, FontSettings::default())
-                .expect("embedded font should load correctly"),
-        )
+fn shared_font() -> &'static ArcadeFont {
+    static FONT: OnceLock<ArcadeFont> = OnceLock::new();
+    FONT.get_or_init(ArcadeFont::load)
+}
+
+impl ArcadeFont {
+    fn load() -> Self {
+        let sheet = decode_png_image(FONT_SHEET_BYTES).expect("embedded font sheet should decode");
+        let glyphs = (FONT_FIRST_TILE..=FONT_LAST_TILE)
+            .enumerate()
+            .map(|(offset, _)| {
+                let column = offset as u32 % FONT_COLUMNS;
+                let row = offset as u32 / FONT_COLUMNS;
+                Arc::new(crop_image(
+                    &sheet,
+                    column * GLYPH_SIZE,
+                    row * GLYPH_SIZE,
+                    GLYPH_SIZE,
+                    GLYPH_SIZE,
+                ))
+            })
+            .collect();
+        Self { glyphs }
+    }
+
+    fn glyph_for_char(&self, ch: char) -> Arc<RenderedImage> {
+        let tile_index = tile_index_for_char(ch).unwrap_or(SPACE_TILE);
+        let clamped = tile_index.clamp(FONT_FIRST_TILE, FONT_LAST_TILE);
+        self.glyphs[(clamped - FONT_FIRST_TILE) as usize].clone()
+    }
+}
+
+fn tile_index_for_char(ch: char) -> Option<u8> {
+    match ch.to_ascii_uppercase() {
+        '0'..='9' | 'A'..='Z' => Some(ch.to_ascii_uppercase() as u8),
+        ' ' => Some(SPACE_TILE),
+        '!' => Some(EXCLAMATION_TILE),
+        _ => None,
+    }
+}
+
+fn blit_tinted_scaled(
+    target: &mut [u8],
+    target_width: u32,
+    glyph: &RenderedImage,
+    origin_x: u32,
+    scale: u32,
+    color: [u8; 4],
+) {
+    for row in 0..glyph.height {
+        for col in 0..glyph.width {
+            let src_index = ((row * glyph.width + col) * 4) as usize;
+            let alpha = glyph.pixels[src_index + 3];
+            if alpha == 0 {
+                continue;
+            }
+
+            for dy in 0..scale {
+                for dx in 0..scale {
+                    let dst_x = origin_x + col * scale + dx;
+                    let dst_y = row * scale + dy;
+                    let dst_index = ((dst_y * target_width + dst_x) * 4) as usize;
+                    target[dst_index] = color[0];
+                    target[dst_index + 1] = color[1];
+                    target[dst_index + 2] = color[2];
+                    target[dst_index + 3] = ((u16::from(alpha) * u16::from(color[3])) / 0xff) as u8;
+                }
+            }
+        }
+    }
+}
+
+fn crop_image(image: &RenderedImage, x: u32, y: u32, width: u32, height: u32) -> RenderedImage {
+    let mut pixels = vec![0; (width * height * 4) as usize];
+    for row in 0..height {
+        let src_start = (((y + row) * image.width + x) * 4) as usize;
+        let src_end = src_start + (width * 4) as usize;
+        let dst_start = (row * width * 4) as usize;
+        pixels[dst_start..dst_start + (width * 4) as usize]
+            .copy_from_slice(&image.pixels[src_start..src_end]);
+    }
+    RenderedImage {
+        width,
+        height,
+        pixels,
+    }
+}
+
+fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
+    let mut decoder = Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
+    let mut reader = decoder.read_info()?;
+    let mut buffer = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .expect("png size should be known")
+    ];
+    let info = reader.next_frame(&mut buffer)?;
+    let bytes = &buffer[..info.buffer_size()];
+
+    let pixels = match info.color_type {
+        ColorType::Rgba => bytes.to_vec(),
+        ColorType::Rgb => bytes
+            .chunks_exact(3)
+            .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 0xff])
+            .collect(),
+        ColorType::Grayscale => bytes
+            .iter()
+            .flat_map(|&gray| [gray, gray, gray, 0xff])
+            .collect(),
+        ColorType::GrayscaleAlpha => bytes
+            .chunks_exact(2)
+            .flat_map(|gray_alpha| [gray_alpha[0], gray_alpha[0], gray_alpha[0], gray_alpha[1]])
+            .collect(),
+        ColorType::Indexed => unreachable!("indexed pngs should be expanded by the decoder"),
+    };
+
+    Ok(RenderedImage {
+        width: info.width,
+        height: info.height,
+        pixels,
     })
-    .clone()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{StatusText, TextGroup};
-    use crate::{constants::RED, render::FrameData};
+    use super::{StatusText, TextGroup, rasterize_text_image};
+    use crate::{
+        constants::{RED, WHITE},
+        render::FrameData,
+    };
 
     #[test]
     fn text_group_starts_with_ready_visible() {
@@ -322,5 +419,12 @@ mod tests {
         let text = TextGroup::new();
 
         assert_eq!(text.game_over.color, RED);
+    }
+
+    #[test]
+    fn arcade_exclamation_glyph_renders_visible_pixels() {
+        let image = rasterize_text_image("!", WHITE, 16.0);
+
+        assert!(image.pixels.chunks_exact(4).any(|pixel| pixel[3] != 0));
     }
 }

@@ -1,0 +1,13 @@
+portal_pair=0,17|27,17
+home_offset=11.5,14.0
+home_connect_left=12,14
+home_connect_right=15,14
+blinky_start_pixels=216,224
+pinky_start_pixels=216,272
+inky_start_pixels=184,272
+clyde_start_pixels=248,272
+pacman_start=15,26
+fruit_start=15,23
+pacman_start_pixels=216,416
+fruit_start_pixels=216,320
+ghost_deny_up=12,14;15,14;12,26;15,26

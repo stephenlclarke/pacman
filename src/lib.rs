@@ -1,6 +1,7 @@
 pub mod actors;
 pub mod animation;
 pub mod app;
+pub mod arcade;
 pub mod audio;
 pub mod autopilot;
 pub mod constants;

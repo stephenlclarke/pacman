@@ -1,9 +1,8 @@
 # PacMan
 
-![PacMan](docs/pacman.png)
+This is a rust implmentation of Pacman rendered with Kitty graphics.
 
-This is a rust implmentation of [pacmancode.com](https://pacmancode.com),
-rendered with Kitty graphics.
+![PacMan](docs/pacman.png)
 
 Run targets:
 
@@ -26,3 +25,24 @@ Extra keys while `xyzzy` mode is active:
 - `f`: toggle forced freight mode for the ghosts.
 - `t`: teleport Pacman to the safest valid node on the map.
 - `r`: reset all ghosts back to their starting positions.
+
+## ROM References
+
+These online references have been useful while translating the Midway Pac-Man
+ROMs into native Rust rather than emulating the Z80 code directly:
+
+- [pacmancode.com](https://pacmancode.com): original lesson sequence this repo
+  started from before the arcade-ROM translation work.
+- [Midway Pacman ROMS](https://www.retrostic.com/roms/mame/pac-man-40808):
+  Original Midway Arcade Pacman ROMS
+- [Pacman hardware](https://www.walkofmind.com/programming/pie/hardware.htm):
+  CPU/video memory map, palette PROM layout, sprite registers, and screen
+  rotation details.
+- [Pacman character definitions](https://walkofmind.com/programming/pie/char_defs.htm):
+  character ROM byte layout and rotated tile decoding details.
+- [Characters, sprites and colours](https://pacmanc.blogspot.com/2024/05/characters-sprites-and-colours.html):
+  practical notes on character ranges, sprite ranges, maze wall characters,
+  tunnel and ghost-house color markers, and fruit/icon character tables.
+- [Pac-Man Emulation Guide](https://www.lomont.org/software/games/pacman/PacmanEmulation.pdf):
+  hardware-oriented reference for palettes, video layout, sprite ordering, and
+  general ROM structure.

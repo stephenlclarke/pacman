@@ -2,12 +2,17 @@
 name = "pacman"
 version = "0.1.0"
 edition = "2024"
+autobins = false
+default-run = "pacman"
+
+[[bin]]
+name = "pacman"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
 base64 = "0.22"
 crossterm = "0.29"
 fastrand = "2.3"
-fontdue = "0.9"
 libc = "0.2"
 png = "0.18"

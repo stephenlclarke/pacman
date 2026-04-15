@@ -6,7 +6,7 @@ use crate::{
     vector::Vector2,
 };
 
-const MAZE_ONE: &str = include_str!("../assets/maze1.txt");
+const MAZE_ONE: &str = include_str!("../assets/arcade/maze-logic.txt");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PelletKind {

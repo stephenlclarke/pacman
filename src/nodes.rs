@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[cfg(test)]
-const MAZE_ONE: &str = include_str!("../assets/maze1.txt");
+const MAZE_ONE: &str = include_str!("../assets/arcade/maze-logic.txt");
 
 pub type NodeId = usize;
 
@@ -396,7 +396,7 @@ mod tests {
     use crate::{actors::EntityKind, pacman::Direction};
 
     #[test]
-    fn pacman_maze_matches_the_downloaded_layout() {
+    fn pacman_maze_matches_the_arcade_logic_layout() {
         let nodes = NodeGroup::pacman_maze();
 
         assert_eq!(nodes.node_count(), 66);

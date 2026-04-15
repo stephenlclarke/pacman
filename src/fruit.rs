@@ -1,7 +1,6 @@
 use crate::{
+    arcade::{fruit_lifespan_seconds, level_spec},
     constants::{GREEN, PACMAN_COLLIDE_RADIUS, PACMAN_RADIUS},
-    nodes::{NodeGroup, NodeId},
-    pacman::Direction,
     render::Circle,
     vector::Vector2,
 };
@@ -20,24 +19,23 @@ pub struct Fruit {
 }
 
 impl Fruit {
-    pub fn new(node: NodeId, nodes: &NodeGroup) -> Self {
-        Self::for_level(node, nodes, 0)
+    pub fn new(position: Vector2) -> Self {
+        Self::for_level(position, 1)
     }
 
-    pub fn for_level(node: NodeId, nodes: &NodeGroup, level_index: u32) -> Self {
-        let target = nodes.neighbor(node, Direction::Right).unwrap_or(node);
-        let position = (nodes.position(node) + nodes.position(target)) * 0.5;
-        let sprite_index = (level_index as usize) % 6;
+    pub fn for_level(position: Vector2, level: u32) -> Self {
+        let sprite_index = sprite_slot(level);
+        let spec = level_spec(level);
 
         Self {
             position,
             radius: PACMAN_RADIUS,
             collide_radius: PACMAN_COLLIDE_RADIUS,
             color: GREEN,
-            lifespan: 5.0,
+            lifespan: fruit_lifespan_seconds(),
             timer: 0.0,
             destroy: false,
-            points: 100 + level_index * 20,
+            points: spec.fruit_points,
             sprite_index,
         }
     }
@@ -82,18 +80,27 @@ impl Fruit {
     }
 }
 
+fn sprite_slot(level: u32) -> usize {
+    match level {
+        1 => 0,
+        2 => 1,
+        3 | 4 => 2,
+        5 | 6 => 3,
+        7 | 8 => 4,
+        9 | 10 => 5,
+        11 | 12 => 6,
+        _ => 7,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Fruit;
-    use crate::nodes::NodeGroup;
+    use crate::vector::Vector2;
 
     #[test]
-    fn fruit_spawns_between_the_expected_nodes() {
-        let nodes = NodeGroup::pacman_maze();
-        let node = nodes
-            .get_node_from_tiles(9.0, 20.0)
-            .expect("fruit spawn node should exist");
-        let fruit = Fruit::new(node, &nodes);
+    fn fruit_spawns_at_the_arcade_position() {
+        let fruit = Fruit::new(Vector2::new(216.0, 320.0));
 
         assert_eq!(fruit.position().as_tuple(), (216.0, 320.0));
         assert_eq!(fruit.points(), 100);
@@ -102,26 +109,26 @@ mod tests {
 
     #[test]
     fn fruit_marks_itself_for_removal_after_its_lifespan() {
-        let nodes = NodeGroup::pacman_maze();
-        let node = nodes
-            .get_node_from_tiles(9.0, 20.0)
-            .expect("fruit spawn node should exist");
-        let mut fruit = Fruit::new(node, &nodes);
+        let mut fruit = Fruit::new(Vector2::new(216.0, 320.0));
 
-        fruit.update(5.1);
+        fruit.update(10.0);
 
         assert!(fruit.destroyed());
     }
 
     #[test]
     fn fruit_level_controls_points_and_sprite_cycle() {
-        let nodes = NodeGroup::pacman_maze();
-        let node = nodes
-            .get_node_from_tiles(9.0, 20.0)
-            .expect("fruit spawn node should exist");
-        let fruit = Fruit::for_level(node, &nodes, 7);
+        let fruit = Fruit::for_level(Vector2::new(216.0, 320.0), 7);
 
-        assert_eq!(fruit.points(), 240);
-        assert_eq!(fruit.sprite_index(), 1);
+        assert_eq!(fruit.points(), 1000);
+        assert_eq!(fruit.sprite_index(), 4);
+    }
+
+    #[test]
+    fn late_levels_use_the_key_bonus_sprite() {
+        let fruit = Fruit::for_level(Vector2::new(216.0, 320.0), 13);
+
+        assert_eq!(fruit.points(), 5000);
+        assert_eq!(fruit.sprite_index(), 7);
     }
 }

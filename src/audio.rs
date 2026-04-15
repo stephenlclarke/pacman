@@ -1,4 +1,5 @@
 use std::{
+    env, fs,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
@@ -9,6 +10,19 @@ use std::{
 };
 
 use crate::game::GameEvent;
+
+#[derive(Clone, Copy, Debug)]
+enum SoundAsset {
+    ButtonClick,
+    Death,
+    FreightMode,
+    FruitEat,
+    GhostEat,
+    LevelComplete,
+    LevelStart,
+    Music,
+    SmallPellet,
+}
 
 #[derive(Debug, Default)]
 struct LoopingAudio {
@@ -22,6 +36,36 @@ pub struct AudioManager {
     enabled: bool,
     title_music: LoopingAudio,
     freight_sound: LoopingAudio,
+}
+
+impl SoundAsset {
+    const fn file_name(self) -> &'static str {
+        match self {
+            Self::ButtonClick => "button_click.ogg",
+            Self::Death => "death.wav",
+            Self::FreightMode => "fright_mode_short.wav",
+            Self::FruitEat => "fruit_eat.wav",
+            Self::GhostEat => "ghost_eat.wav",
+            Self::LevelComplete => "level_complete.wav",
+            Self::LevelStart => "level_start.wav",
+            Self::Music => "music.ogg",
+            Self::SmallPellet => "small_pellet2.wav",
+        }
+    }
+
+    const fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::ButtonClick => include_bytes!("../assets/Sounds/button_click.ogg"),
+            Self::Death => include_bytes!("../assets/Sounds/death.wav"),
+            Self::FreightMode => include_bytes!("../assets/Sounds/fright_mode_short.wav"),
+            Self::FruitEat => include_bytes!("../assets/Sounds/fruit_eat.wav"),
+            Self::GhostEat => include_bytes!("../assets/Sounds/ghost_eat.wav"),
+            Self::LevelComplete => include_bytes!("../assets/Sounds/level_complete.wav"),
+            Self::LevelStart => include_bytes!("../assets/Sounds/level_start.wav"),
+            Self::Music => include_bytes!("../assets/Sounds/music.ogg"),
+            Self::SmallPellet => include_bytes!("../assets/Sounds/small_pellet2.wav"),
+        }
+    }
 }
 
 impl LoopingAudio {
@@ -113,31 +157,33 @@ impl AudioManager {
                 self.stop_freight_sound();
                 self.play_title_music();
             }
-            GameEvent::ButtonClicked => self.play_effect("button_click.ogg"),
+            GameEvent::ButtonClicked => self.play_effect(SoundAsset::ButtonClick),
             GameEvent::GameStarted => {
                 self.stop_title_music();
                 self.stop_freight_sound();
-                self.play_effect("level_start.wav");
+                self.play_effect(SoundAsset::LevelStart);
             }
-            GameEvent::SmallPelletEaten => self.play_effect("small_pellet2.wav"),
+            GameEvent::SmallPelletEaten => self.play_effect(SoundAsset::SmallPellet),
             GameEvent::PowerPelletEaten => {}
             GameEvent::FreightModeStarted => self.play_freight_sound(),
             GameEvent::FreightModeEnded => self.stop_freight_sound(),
-            GameEvent::GhostEaten => self.play_effect("ghost_eat.wav"),
-            GameEvent::FruitEaten => self.play_effect("fruit_eat.wav"),
+            GameEvent::GhostEaten => self.play_effect(SoundAsset::GhostEat),
+            GameEvent::FruitEaten => self.play_effect(SoundAsset::FruitEat),
             GameEvent::PacmanDied => {
                 self.stop_freight_sound();
-                self.play_effect("death.wav");
+                self.play_effect(SoundAsset::Death);
             }
             GameEvent::LevelCompleted => {
                 self.stop_freight_sound();
-                self.play_effect("level_complete.wav");
+                self.play_effect(SoundAsset::LevelComplete);
             }
         }
     }
 
     fn play_title_music(&mut self) {
-        self.title_music.play(sound_path("music.ogg"));
+        if let Some(path) = sound_path(SoundAsset::Music) {
+            self.title_music.play(path);
+        }
     }
 
     fn stop_title_music(&mut self) {
@@ -145,16 +191,22 @@ impl AudioManager {
     }
 
     fn play_freight_sound(&mut self) {
-        self.freight_sound.play(sound_path("fright_mode_short.wav"));
+        if let Some(path) = sound_path(SoundAsset::FreightMode) {
+            self.freight_sound.play(path);
+        }
     }
 
     fn stop_freight_sound(&mut self) {
         self.freight_sound.stop();
     }
 
-    fn play_effect(&self, filename: &str) {
+    fn play_effect(&self, sound: SoundAsset) {
+        let Some(path) = sound_path(sound) else {
+            return;
+        };
+
         let _ = Command::new("/usr/bin/afplay")
-            .arg(sound_path(filename))
+            .arg(path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn();
@@ -168,21 +220,75 @@ impl Drop for AudioManager {
     }
 }
 
-fn sound_path(filename: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets")
-        .join("Sounds")
-        .join(filename)
+fn sound_path(sound: SoundAsset) -> Option<PathBuf> {
+    let path = cached_sound_path(sound);
+    if ensure_embedded_sound(sound, &path).is_ok() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn cached_sound_path(sound: SoundAsset) -> PathBuf {
+    env::temp_dir()
+        .join("pacman")
+        .join(env!("CARGO_PKG_VERSION"))
+        .join("sounds")
+        .join(sound.file_name())
+}
+
+fn ensure_embedded_sound(sound: SoundAsset, path: &Path) -> std::io::Result<()> {
+    let bytes = sound.bytes();
+
+    if path
+        .metadata()
+        .map(|meta| meta.len() == bytes.len() as u64)
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, bytes)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::sound_path;
+    use super::{SoundAsset, cached_sound_path, ensure_embedded_sound, sound_path};
 
     #[test]
-    fn sound_paths_point_into_the_repo_assets_directory() {
-        let path = sound_path("music.ogg");
+    fn embedded_sound_cache_uses_the_temp_directory() {
+        let path = cached_sound_path(SoundAsset::Music);
 
-        assert!(path.ends_with("assets/Sounds/music.ogg"));
+        assert!(path.ends_with("pacman/0.1.0/sounds/music.ogg"));
+    }
+
+    #[test]
+    fn embedded_sound_files_can_be_materialized_for_playback() {
+        let path = sound_path(SoundAsset::Music).expect("embedded music should materialize");
+
+        assert!(path.exists());
+        assert!(
+            path.metadata()
+                .expect("embedded sound path should be readable")
+                .len()
+                > 0
+        );
+    }
+
+    #[test]
+    fn materialized_sound_matches_embedded_length() {
+        let path = cached_sound_path(SoundAsset::ButtonClick);
+        ensure_embedded_sound(SoundAsset::ButtonClick, &path)
+            .expect("embedded click sound should be written");
+
+        assert_eq!(
+            path.metadata()
+                .expect("materialized sound should exist")
+                .len(),
+            SoundAsset::ButtonClick.bytes().len() as u64
+        );
     }
 }
