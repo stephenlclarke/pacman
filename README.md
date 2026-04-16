@@ -18,7 +18,11 @@ This is a rust implmentation of Pacman rendered with Kitty graphics.
 
 ![PacMan](docs/pacman.png)
 
-![Start Sequence](docs/start-sequence.gif)
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/start-sequence.gif" alt="Start Sequence" />
+</p>
+<!-- markdownlint-enable MD033 -->
 
 Run targets:
 
