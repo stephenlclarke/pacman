@@ -1,3 +1,5 @@
+//! Contains the main game state machine, gameplay update logic, title screens, and headless simulation support.
+
 use std::sync::Arc;
 
 use crate::{
@@ -218,6 +220,7 @@ struct AppState {
 }
 
 impl Game {
+    /// Creates new.
     pub fn new() -> Self {
         Self {
             state: AppState::new(),
@@ -225,23 +228,28 @@ impl Game {
         }
     }
 
+    /// Updates with input.
     pub fn update_with_input(&mut self, dt: f32, input: UpdateInput) {
         let q_pressed = input.typed_chars.contains(&'q');
         self.state.update(dt, &input);
 
+        // Branch based on the current runtime condition.
         if q_pressed {
             self.quit_requested = true;
         }
     }
 
+    /// Handles requested.
     pub fn quit_requested(&self) -> bool {
         self.quit_requested
     }
 
+    /// Handles events.
     pub fn drain_events(&mut self) -> Vec<GameEvent> {
         self.state.drain_events()
     }
 
+    /// Handles frame.
     pub fn frame(&self) -> FrameData {
         let mut frame = FrameData::default();
         self.state.append_renderables(&mut frame);
@@ -250,11 +258,13 @@ impl Game {
 }
 
 impl Default for Game {
+    /// Handles default.
     fn default() -> Self {
         Self::new()
     }
 }
 
+/// Runs headless autopilot.
 pub fn run_headless_autopilot(seed: u64, max_steps: usize) -> HeadlessAutopilotReport {
     fastrand::seed(seed);
 
@@ -276,12 +286,15 @@ pub fn run_headless_autopilot(seed: u64, max_steps: usize) -> HeadlessAutopilotR
         death_snapshot: None,
     };
 
+    // Iterate through each item in the current collection or range.
     for _ in 0..max_steps {
         state.update_headless(ORIGINAL_FRAME_TIME);
         report.steps += 1;
         report.level_reached = report.level_reached.max(state.level);
 
+        // Iterate through each item in the current collection or range.
         for event in state.drain_events() {
+            // Select the next behavior based on the current state.
             match event {
                 GameEvent::SmallPelletEaten => report.pellets_eaten += 1,
                 GameEvent::GhostEaten => report.ghosts_eaten += 1,
@@ -307,11 +320,13 @@ pub fn run_headless_autopilot(seed: u64, max_steps: usize) -> HeadlessAutopilotR
     report
 }
 
+/// Handles gameplay level.
 fn build_gameplay_level(
     maze_spec: MazeSpec,
     level: u32,
 ) -> (NodeGroup, NodePacman, PelletGroup, GhostGroup) {
     let mut nodes = NodeGroup::from_pacman_layout(maze_spec.layout);
+    // Iterate through each item in the current collection or range.
     for &(left, right) in &maze_spec.portal_pairs {
         nodes.set_portal_pair(left, right);
     }
@@ -377,10 +392,12 @@ fn build_gameplay_level(
 
     nodes.deny_home_access(EntityKind::Pacman);
     nodes.deny_home_access_list(ghosts.entity_kinds());
+    // Iterate through each item in the current collection or range.
     for (direction, position) in maze_spec.deny_ghost_access_positions() {
         nodes.deny_access_list(position.0, position.1, direction, ghosts.entity_kinds());
     }
 
+    // Iterate through each item in the current collection or range.
     for &(col, row) in &maze_spec.ghost_deny_up {
         nodes.deny_access_list(col, row, Direction::Up, ghosts.entity_kinds());
     }
@@ -395,10 +412,12 @@ impl GameplayState {
     const EASTER_EGG_CODE: [char; 5] = ['x', 'y', 'z', 'z', 'y'];
     const READY_TIME: f32 = 3.0;
 
+    /// Creates new.
     fn new() -> Self {
         Self::start_level(1, 5, 0, Vec::new())
     }
 
+    /// Starts level.
     fn start_level(level: u32, lives: u32, score: u32, fruit_captured: Vec<usize>) -> Self {
         let maze_spec = MazeSpec::arcade();
         let (nodes, pacman, pellets, ghosts) = build_gameplay_level(maze_spec, level);
@@ -457,6 +476,7 @@ impl GameplayState {
         state
     }
 
+    /// Updates update.
     fn update(
         &mut self,
         dt: f32,
@@ -467,6 +487,7 @@ impl GameplayState {
         let freight_was_active = self.ghosts.has_freight_mode();
         self.update_ui(dt, typed_chars);
 
+        // Branch based on the current runtime condition.
         if !self.pause.paused() {
             self.update_live_entities(dt, requested_direction);
         }
@@ -474,6 +495,7 @@ impl GameplayState {
         self.update_pacman_animation(dt);
         self.update_background_flash(dt);
 
+        // Branch based on the current runtime condition.
         if let Some(action) = self.pause.update(dt) {
             self.handle_after_pause(action);
         }
@@ -483,14 +505,17 @@ impl GameplayState {
         self.sync_freight_events(freight_was_active);
     }
 
+    /// Updates headless.
     fn update_headless(&mut self, dt: f32) {
         let mut requested_direction = Direction::Stop;
         let freight_was_active = self.ghosts.has_freight_mode();
 
+        // Branch based on the current runtime condition.
         if !self.pause.paused() {
             self.tick_ghost_release_timer(dt);
             self.sustain_secret_freight_mode();
 
+            // Branch based on the current runtime condition.
             if self.pacman.alive() && self.easter_egg_autopilot.active() {
                 requested_direction = self.easter_egg_autopilot.choose_direction(
                     &self.nodes,
@@ -504,6 +529,7 @@ impl GameplayState {
                     },
                 );
             }
+            // Branch based on the current runtime condition.
             if self.pacman.alive() {
                 self.update_pacman_motion(dt, requested_direction);
             }
@@ -520,6 +546,7 @@ impl GameplayState {
                 },
             );
 
+            // Branch based on the current runtime condition.
             if let Some(fruit) = &mut self.fruit {
                 fruit.update(dt);
             }
@@ -528,6 +555,7 @@ impl GameplayState {
             self.check_ghost_events_headless();
             self.check_fruit_events_headless();
         }
+        // Branch based on the current runtime condition.
         if let Some(action) = self.pause.update(dt) {
             self.handle_after_pause_headless(action);
         }
@@ -535,6 +563,7 @@ impl GameplayState {
         self.sync_freight_events(freight_was_active);
     }
 
+    /// Updates ui.
     fn update_ui(&mut self, dt: f32, typed_chars: &[char]) {
         self.handle_easter_egg_input(typed_chars);
         self.easter_egg_blink.update(dt);
@@ -542,11 +571,13 @@ impl GameplayState {
         self.pellets.update(dt);
     }
 
+    /// Updates live entities.
     fn update_live_entities(&mut self, dt: f32, requested_direction: Direction) {
         self.tick_ghost_release_timer(dt);
         self.sustain_secret_freight_mode();
 
         let requested_direction = self.autopilot_direction(requested_direction);
+        // Branch based on the current runtime condition.
         if self.pacman.alive() {
             self.update_pacman_motion(dt, requested_direction);
         }
@@ -558,7 +589,9 @@ impl GameplayState {
         self.check_fruit_events();
     }
 
+    /// Handles direction.
     fn autopilot_direction(&mut self, requested_direction: Direction) -> Direction {
+        // Branch based on the current runtime condition.
         if !self.pacman.alive() || !self.easter_egg_autopilot.active() {
             return requested_direction;
         }
@@ -576,7 +609,9 @@ impl GameplayState {
         )
     }
 
+    /// Updates pacman animation.
     fn update_pacman_animation(&mut self, dt: f32) {
+        // Branch based on the current runtime condition.
         if !self.pacman.alive() {
             self.pacman_sprites
                 .update_for_state(dt, self.pacman.direction(), false);
@@ -591,6 +626,7 @@ impl GameplayState {
             .update_for_state(dt, self.pacman.direction(), true);
     }
 
+    /// Updates ghosts.
     fn update_ghosts(&mut self, dt: f32) {
         self.ghosts.update(
             dt,
@@ -605,23 +641,29 @@ impl GameplayState {
         );
     }
 
+    /// Updates fruit.
     fn update_fruit(&mut self, dt: f32) {
+        // Branch based on the current runtime condition.
         if let Some(fruit) = &mut self.fruit {
             fruit.update(dt);
         }
     }
 
+    /// Updates background flash.
     fn update_background_flash(&mut self, dt: f32) {
+        // Branch based on the current runtime condition.
         if !self.flash_background {
             return;
         }
 
         self.flash_timer += dt;
+        // Branch based on the current runtime condition.
         if self.flash_timer < Self::FLASH_TIME {
             return;
         }
 
         self.flash_timer = 0.0;
+        // Branch based on the current runtime condition.
         if Arc::ptr_eq(&self.background, &self.background_norm) {
             self.background = self.background_flash.clone();
         } else {
@@ -629,11 +671,14 @@ impl GameplayState {
         }
     }
 
+    /// Handles pause request.
     fn handle_pause_request(&mut self, pause_requested: bool) {
+        // Branch based on the current runtime condition.
         if !pause_requested || !self.pacman.alive() || self.pause.is_timed() {
             return;
         }
 
+        // Branch based on the current runtime condition.
         if self.pause.toggle() {
             self.text_group.show_status(StatusText::Paused);
             self.hide_entities();
@@ -643,18 +688,23 @@ impl GameplayState {
         }
     }
 
+    /// Handles events.
     fn drain_events(&mut self) -> Vec<GameEvent> {
         std::mem::take(&mut self.events)
     }
 
+    /// Handles easter egg input.
     fn handle_easter_egg_input(&mut self, typed_chars: &[char]) {
+        // Iterate through each item in the current collection or range.
         for &character in typed_chars {
             let is_secret_code_input = self.update_easter_egg_sequence(character);
 
+            // Branch based on the current runtime condition.
             if !self.easter_egg_active {
                 continue;
             }
 
+            // Select the next behavior based on the current state.
             match character {
                 'a' => {
                     self.easter_egg_autopilot.toggle();
@@ -673,9 +723,12 @@ impl GameplayState {
         }
     }
 
+    /// Updates easter egg sequence.
     fn update_easter_egg_sequence(&mut self, character: char) -> bool {
+        // Branch based on the current runtime condition.
         if character == Self::EASTER_EGG_CODE[self.easter_egg_sequence_index] {
             self.easter_egg_sequence_index += 1;
+            // Branch based on the current runtime condition.
             if self.easter_egg_sequence_index == Self::EASTER_EGG_CODE.len() {
                 self.easter_egg_sequence_index = 0;
                 self.toggle_easter_egg_mode();
@@ -687,17 +740,21 @@ impl GameplayState {
         character == Self::EASTER_EGG_CODE[0]
     }
 
+    /// Toggles easter egg mode.
     fn toggle_easter_egg_mode(&mut self) {
         self.easter_egg_active = !self.easter_egg_active;
         self.easter_egg_sequence_index = 0;
         self.easter_egg_blink.start();
+        // Branch based on the current runtime condition.
         if !self.easter_egg_active {
             self.easter_egg_autopilot.disable();
             self.disable_secret_freight_mode();
         }
     }
 
+    /// Toggles secret freight mode.
     fn toggle_secret_freight_mode(&mut self) {
+        // Branch based on the current runtime condition.
         if self.easter_egg_force_freight {
             self.disable_secret_freight_mode();
             return;
@@ -707,7 +764,9 @@ impl GameplayState {
         self.ghosts.start_freight();
     }
 
+    /// Disables secret freight mode.
     fn disable_secret_freight_mode(&mut self) {
+        // Branch based on the current runtime condition.
         if !self.easter_egg_force_freight {
             return;
         }
@@ -716,7 +775,9 @@ impl GameplayState {
         self.ghosts.end_freight();
     }
 
+    /// Sustains secret freight mode.
     fn sustain_secret_freight_mode(&mut self) {
+        // Branch based on the current runtime condition.
         if !self.easter_egg_force_freight {
             return;
         }
@@ -724,6 +785,7 @@ impl GameplayState {
         self.ghosts.sustain_freight();
     }
 
+    /// Handles pacman to safest node.
     fn teleport_pacman_to_safest_node(&mut self) {
         let Some(target) = self
             .nodes
@@ -746,6 +808,7 @@ impl GameplayState {
         self.pacman.teleport_to_node(target, &self.nodes);
     }
 
+    /// Computes ghost distance squared.
     fn minimum_ghost_distance_squared(&self, node_id: usize) -> f32 {
         let position = self.nodes.position(node_id);
         self.ghosts
@@ -754,17 +817,21 @@ impl GameplayState {
             .fold(f32::INFINITY, f32::min)
     }
 
+    /// Resets ghosts to start positions.
     fn reset_ghosts_to_start_positions(&mut self) {
         let freight_active = self.ghosts.has_freight_mode();
         self.ghosts.reset(&self.nodes, self.level);
         self.apply_level_start_release_rules();
+        // Branch based on the current runtime condition.
         if freight_active || self.easter_egg_force_freight {
             self.ghosts.start_freight();
         }
     }
 
+    /// Restores ghost access rules.
     fn restore_ghost_access_rules(&mut self) {
         self.nodes.deny_home_access_list(self.ghosts.entity_kinds());
+        // Iterate through each item in the current collection or range.
         for (direction, position) in self.maze_spec.deny_ghost_access_positions() {
             self.nodes.deny_access_list(
                 position.0,
@@ -773,11 +840,14 @@ impl GameplayState {
                 self.ghosts.entity_kinds(),
             );
         }
+        // Iterate through each item in the current collection or range.
         for &(col, row) in &self.maze_spec.ghost_deny_up {
             self.nodes
                 .deny_access_list(col, row, Direction::Up, self.ghosts.entity_kinds());
         }
+        // Iterate through each item in the current collection or range.
         for kind in GhostKind::ALL {
+            // Branch based on the current runtime condition.
             if self.ghost_release_locks[kind.index()] {
                 self.apply_release_lock(kind);
             } else {
@@ -786,8 +856,11 @@ impl GameplayState {
         }
     }
 
+    /// Sets red zone restrictions.
     fn set_red_zone_restrictions(&mut self, enabled: bool) {
+        // Iterate through each item in the current collection or range.
         for &(col, row) in &self.maze_spec.ghost_deny_up {
+            // Branch based on the current runtime condition.
             if enabled {
                 self.nodes
                     .deny_access_list(col, row, Direction::Up, self.ghosts.entity_kinds());
@@ -798,6 +871,7 @@ impl GameplayState {
         }
     }
 
+    /// Updates pacman motion.
     fn update_pacman_motion(&mut self, dt: f32, requested_direction: Direction) {
         let frightened = self.ghosts.has_freight_mode();
         self.pacman.set_frightened(frightened);
@@ -808,28 +882,36 @@ impl GameplayState {
             .update(moving_dt, requested_direction, &self.nodes);
     }
 
+    /// Handles ghost release timer.
     fn tick_ghost_release_timer(&mut self, dt: f32) {
         self.dot_release_timer += dt;
+        // Branch based on the current runtime condition.
         if self.dot_release_timer < release_timer_limit(self.level) {
             return;
         }
 
         self.dot_release_timer = 0.0;
+        // Branch based on the current runtime condition.
         if let Some(kind) = self.next_locked_ghost() {
             self.release_ghost(kind);
         }
     }
 
+    /// Handles dot for ghost house.
     fn record_dot_for_ghost_house(&mut self) {
         self.dot_release_timer = 0.0;
 
+        // Branch based on the current runtime condition.
         if let Some(counter) = &mut self.global_dot_counter {
             *counter += 1;
+            // Iterate through each item in the current collection or range.
             for kind in [GhostKind::Pinky, GhostKind::Inky, GhostKind::Clyde] {
+                // Branch based on the current runtime condition.
                 if self.ghost_release_locks[kind.index()]
                     && global_release_dot(kind).is_some_and(|threshold| *counter == threshold)
                 {
                     self.release_ghost(kind);
+                    // Branch based on the current runtime condition.
                     if kind == GhostKind::Clyde {
                         self.global_dot_counter = None;
                     }
@@ -843,11 +925,13 @@ impl GameplayState {
             return;
         };
         self.personal_dot_counters[kind.index()] += 1;
+        // Branch based on the current runtime condition.
         if self.personal_dot_counters[kind.index()] >= ghost_personal_dot_limit(kind, self.level) {
             self.release_ghost(kind);
         }
     }
 
+    /// Handles level start release rules.
     fn apply_level_start_release_rules(&mut self) {
         self.pacman_pause_remaining = 0.0;
         self.dot_release_timer = 0.0;
@@ -856,15 +940,18 @@ impl GameplayState {
         self.personal_dot_counters = [0; 4];
         self.elroy_suspended = false;
 
+        // Branch based on the current runtime condition.
         if ghost_personal_dot_limit(GhostKind::Inky, self.level) > 0 {
             self.ghost_release_locks[GhostKind::Inky.index()] = true;
         }
+        // Branch based on the current runtime condition.
         if ghost_personal_dot_limit(GhostKind::Clyde, self.level) > 0 {
             self.ghost_release_locks[GhostKind::Clyde.index()] = true;
         }
         self.restore_ghost_access_rules();
     }
 
+    /// Handles post death release rules.
     fn apply_post_death_release_rules(&mut self) {
         self.pacman_pause_remaining = 0.0;
         self.dot_release_timer = 0.0;
@@ -877,20 +964,24 @@ impl GameplayState {
         self.restore_ghost_access_rules();
     }
 
+    /// Handles locked ghost.
     fn next_locked_ghost(&self) -> Option<GhostKind> {
         [GhostKind::Pinky, GhostKind::Inky, GhostKind::Clyde]
             .into_iter()
             .find(|kind| self.ghost_release_locks[kind.index()])
     }
 
+    /// Handles ghost.
     fn release_ghost(&mut self, kind: GhostKind) {
         self.ghost_release_locks[kind.index()] = false;
         self.remove_release_lock(kind);
+        // Branch based on the current runtime condition.
         if kind == GhostKind::Clyde {
             self.elroy_suspended = false;
         }
     }
 
+    /// Handles release lock.
     fn apply_release_lock(&mut self, kind: GhostKind) {
         let (direction, position, ghost) = match kind {
             GhostKind::Pinky => self.maze_spec.pinky_start_restriction(),
@@ -902,6 +993,7 @@ impl GameplayState {
             .deny_access(position.0, position.1, direction, ghost.entity());
     }
 
+    /// Handles release lock.
     fn remove_release_lock(&mut self, kind: GhostKind) {
         let (direction, position, ghost) = match kind {
             GhostKind::Pinky => self.maze_spec.pinky_start_restriction(),
@@ -913,6 +1005,7 @@ impl GameplayState {
             .allow_access(position.0, position.1, direction, ghost.entity());
     }
 
+    /// Handles mode flags.
     fn secret_mode_flags(&self) -> SecretModeFlags {
         SecretModeFlags {
             easter_egg_active: self.easter_egg_active,
@@ -921,19 +1014,23 @@ impl GameplayState {
         }
     }
 
+    /// Handles secret mode flags.
     fn apply_secret_mode_flags(&mut self, flags: SecretModeFlags) {
         self.easter_egg_active = flags.easter_egg_active;
         self.easter_egg_force_freight = flags.easter_egg_force_freight;
         self.easter_egg_sequence_index = 0;
         self.easter_egg_autopilot.set_active(flags.autopilot_active);
+        // Branch based on the current runtime condition.
         if self.easter_egg_force_freight {
             self.ghosts.start_freight();
         }
     }
 
+    /// Synchronizes freight events.
     fn sync_freight_events(&mut self, freight_was_active: bool) {
         let freight_is_active = self.ghosts.has_freight_mode();
         self.set_red_zone_restrictions(!freight_is_active);
+        // Select the next behavior based on the current state.
         match (freight_was_active, freight_is_active) {
             (false, true) => {
                 self.events.push(GameEvent::FreightModeStarted);
@@ -945,15 +1042,18 @@ impl GameplayState {
         }
     }
 
+    /// Updates score.
     fn update_score(&mut self, points: u32) {
         self.score += points;
         self.text_group.update_score(self.score);
     }
 
+    /// Updates score headless.
     fn update_score_headless(&mut self, points: u32) {
         self.score += points;
     }
 
+    /// Checks pellet events.
     fn check_pellet_events(&mut self) {
         let Some(pellet) = self
             .pellets
@@ -967,11 +1067,13 @@ impl GameplayState {
         self.pacman_pause_remaining += dot_pause_seconds(pellet.kind() == PelletKind::PowerPellet);
         self.record_dot_for_ghost_house();
 
+        // Branch based on the current runtime condition.
         if pellet.kind() == PelletKind::PowerPellet {
             self.ghosts.start_freight();
             self.events.push(GameEvent::PowerPelletEaten);
         }
 
+        // Branch based on the current runtime condition.
         if self.pellets.is_empty() {
             self.easter_egg_autopilot.invalidate_route();
             self.events.push(GameEvent::LevelCompleted);
@@ -983,6 +1085,7 @@ impl GameplayState {
         }
     }
 
+    /// Checks pellet events headless.
     fn check_pellet_events_headless(&mut self) {
         let Some(pellet) = self
             .pellets
@@ -996,11 +1099,13 @@ impl GameplayState {
         self.pacman_pause_remaining += dot_pause_seconds(pellet.kind() == PelletKind::PowerPellet);
         self.record_dot_for_ghost_house();
 
+        // Branch based on the current runtime condition.
         if pellet.kind() == PelletKind::PowerPellet {
             self.ghosts.start_freight();
             self.events.push(GameEvent::PowerPelletEaten);
         }
 
+        // Branch based on the current runtime condition.
         if self.pellets.is_empty() {
             self.easter_egg_autopilot.invalidate_route();
             self.events.push(GameEvent::LevelCompleted);
@@ -1008,9 +1113,12 @@ impl GameplayState {
         }
     }
 
+    /// Checks ghost events.
     fn check_ghost_events(&mut self) {
         let mut collision = None;
+        // Iterate through each item in the current collection or range.
         for ghost in self.ghosts.iter() {
+            // Branch based on the current runtime condition.
             if self
                 .pacman
                 .collide_check(ghost.position(), ghost.collide_radius())
@@ -1024,6 +1132,7 @@ impl GameplayState {
             return;
         };
 
+        // Select the next behavior based on the current state.
         match ghost_mode {
             GhostMode::Freight => {
                 self.pacman.hide();
@@ -1044,6 +1153,7 @@ impl GameplayState {
             }
             GhostMode::Spawn => {}
             GhostMode::Scatter | GhostMode::Chase => {
+                // Branch based on the current runtime condition.
                 if !self.pacman.alive() {
                     return;
                 }
@@ -1064,9 +1174,12 @@ impl GameplayState {
         }
     }
 
+    /// Checks ghost events headless.
     fn check_ghost_events_headless(&mut self) {
         let mut collision = None;
+        // Iterate through each item in the current collection or range.
         for ghost in self.ghosts.iter() {
+            // Branch based on the current runtime condition.
             if self
                 .pacman
                 .collide_check(ghost.position(), ghost.collide_radius())
@@ -1080,6 +1193,7 @@ impl GameplayState {
             return;
         };
 
+        // Select the next behavior based on the current state.
         match ghost_mode {
             GhostMode::Freight => {
                 self.update_score_headless(ghost_points);
@@ -1092,6 +1206,7 @@ impl GameplayState {
             }
             GhostMode::Spawn => {}
             GhostMode::Scatter | GhostMode::Chase => {
+                // Branch based on the current runtime condition.
                 if !self.pacman.alive() {
                     return;
                 }
@@ -1109,8 +1224,11 @@ impl GameplayState {
         }
     }
 
+    /// Checks fruit events.
     fn check_fruit_events(&mut self) {
+        // Iterate through each item in the current collection or range.
         for (index, threshold) in fruit_release_dots().into_iter().enumerate() {
+            // Branch based on the current runtime condition.
             if !self.fruit_thresholds_spawned[index]
                 && self.pellets.num_eaten() >= threshold
                 && self.fruit.is_none()
@@ -1139,6 +1257,7 @@ impl GameplayState {
             .collide_check(fruit.position(), fruit.collide_radius());
         let expired = fruit.destroyed();
 
+        // Branch based on the current runtime condition.
         if hit_fruit {
             self.update_score(fruit_points);
             self.text_group.add_popup(
@@ -1147,6 +1266,7 @@ impl GameplayState {
                 fruit_position.x,
                 fruit_position.y,
             );
+            // Branch based on the current runtime condition.
             if !self.fruit_captured.contains(&fruit_sprite_index) {
                 self.fruit_captured.push(fruit_sprite_index);
             }
@@ -1157,8 +1277,11 @@ impl GameplayState {
         }
     }
 
+    /// Checks fruit events headless.
     fn check_fruit_events_headless(&mut self) {
+        // Iterate through each item in the current collection or range.
         for (index, threshold) in fruit_release_dots().into_iter().enumerate() {
+            // Branch based on the current runtime condition.
             if !self.fruit_thresholds_spawned[index]
                 && self.pellets.num_eaten() >= threshold
                 && self.fruit.is_none()
@@ -1186,8 +1309,10 @@ impl GameplayState {
             .collide_check(fruit.position(), fruit.collide_radius());
         let expired = fruit.destroyed();
 
+        // Branch based on the current runtime condition.
         if hit_fruit {
             self.update_score_headless(fruit_points);
+            // Branch based on the current runtime condition.
             if !self.fruit_captured.contains(&fruit_sprite_index) {
                 self.fruit_captured.push(fruit_sprite_index);
             }
@@ -1198,7 +1323,9 @@ impl GameplayState {
         }
     }
 
+    /// Handles after pause.
     fn handle_after_pause(&mut self, action: GameplayAction) {
+        // Select the next behavior based on the current state.
         match action {
             GameplayAction::ShowEntities => {
                 self.text_group.hide_status();
@@ -1221,7 +1348,9 @@ impl GameplayState {
         }
     }
 
+    /// Handles after pause headless.
     fn handle_after_pause_headless(&mut self, action: GameplayAction) {
+        // Select the next behavior based on the current state.
         match action {
             GameplayAction::ShowEntities => {}
             GameplayAction::ResetLevel => self.reset_level_headless(),
@@ -1242,12 +1371,14 @@ impl GameplayState {
         }
     }
 
+    /// Resets level.
     fn reset_level(&mut self) {
         self.pacman.reset(&self.nodes);
         self.pacman_sprites.reset();
         self.ghosts.reset(&self.nodes, self.level);
         self.easter_egg_autopilot.invalidate_route();
         self.apply_post_death_release_rules();
+        // Branch based on the current runtime condition.
         if self.easter_egg_force_freight {
             self.ghosts.start_freight();
         }
@@ -1261,11 +1392,13 @@ impl GameplayState {
             .start_timed_pause(Self::READY_TIME, GameplayAction::ShowEntities);
     }
 
+    /// Resets level headless.
     fn reset_level_headless(&mut self) {
         self.pacman.reset(&self.nodes);
         self.ghosts.reset(&self.nodes, self.level);
         self.easter_egg_autopilot.invalidate_route();
         self.apply_post_death_release_rules();
+        // Branch based on the current runtime condition.
         if self.easter_egg_force_freight {
             self.ghosts.start_freight();
         }
@@ -1273,6 +1406,7 @@ impl GameplayState {
         self.pause.set_paused(false);
     }
 
+    /// Handles death snapshot.
     fn headless_death_snapshot(&self) -> HeadlessDeathSnapshot {
         HeadlessDeathSnapshot {
             level: self.level,
@@ -1298,20 +1432,24 @@ impl GameplayState {
         }
     }
 
+    /// Shows entities.
     fn show_entities(&mut self) {
         self.pacman.show();
         self.ghosts.show();
     }
 
+    /// Hides entities.
     fn hide_entities(&mut self) {
         self.pacman.hide();
         self.ghosts.hide();
     }
 
+    /// Appends renderables.
     fn append_renderables(&self, frame: &mut FrameData) {
         frame.background = Some(self.background.clone());
         self.pellets.append_renderables(frame);
 
+        // Branch based on the current runtime condition.
         if let Some(fruit) = &self.fruit {
             let image = self.fruit_sprites.item_image(fruit.sprite_index());
             frame.sprites.push(Sprite {
@@ -1320,6 +1458,7 @@ impl GameplayState {
                 anchor: SpriteAnchor::TopLeft,
             });
         }
+        // Branch based on the current runtime condition.
         if self.pacman.visible() && self.easter_egg_blink.visible() {
             let image = self.pacman_sprites.current();
             frame.sprites.push(Sprite {
@@ -1328,7 +1467,9 @@ impl GameplayState {
                 anchor: SpriteAnchor::TopLeft,
             });
         }
+        // Iterate through each item in the current collection or range.
         for ghost in self.ghosts.iter() {
+            // Branch based on the current runtime condition.
             if ghost.visible() {
                 let image = self.ghost_sprites.image(
                     ghost.kind(),
@@ -1348,6 +1489,7 @@ impl GameplayState {
         self.text_group.append_renderables(frame);
         let life_icon = self.life_sprites.image();
         let icon_y = SCREEN_HEIGHT as f32 - life_icon.height as f32;
+        // Iterate through each item in the current collection or range.
         for index in 0..self.life_sprites.lives() {
             frame.sprites.push(Sprite {
                 image: life_icon.clone(),
@@ -1355,6 +1497,7 @@ impl GameplayState {
                 anchor: SpriteAnchor::TopLeft,
             });
         }
+        // Iterate through each item in the current collection or range.
         for (index, fruit_index) in self.fruit_captured.iter().enumerate() {
             let image = self.fruit_sprites.icon_image(*fruit_index);
             frame.sprites.push(Sprite {
@@ -1373,41 +1516,49 @@ impl BlinkFeedback {
     const TOGGLES: u8 = 6;
     const INTERVAL: f32 = 0.1;
 
+    /// Starts start.
     fn start(&mut self) {
         self.toggles_remaining = Self::TOGGLES;
         self.timer = 0.0;
         self.visible = false;
     }
 
+    /// Updates update.
     fn update(&mut self, dt: f32) {
+        // Branch based on the current runtime condition.
         if self.toggles_remaining == 0 {
             self.visible = true;
             return;
         }
 
         self.timer += dt;
+        // Continue processing while the guard condition remains true.
         while self.timer >= Self::INTERVAL && self.toggles_remaining > 0 {
             self.timer -= Self::INTERVAL;
             self.toggles_remaining = self.toggles_remaining.saturating_sub(1);
             self.visible = !self.visible;
         }
 
+        // Branch based on the current runtime condition.
         if self.toggles_remaining == 0 {
             self.timer = 0.0;
             self.visible = true;
         }
     }
 
+    /// Handles visible.
     fn visible(&self) -> bool {
         self.visible
     }
 }
 
+/// Handles sprite draw position.
 fn gameplay_sprite_draw_position(position: Vector2, _image: &RenderedImage) -> Vector2 {
     position - Vector2::new(TILE_WIDTH as f32 / 2.0, TILE_HEIGHT as f32 / 2.0)
 }
 
 impl Default for BlinkFeedback {
+    /// Handles default.
     fn default() -> Self {
         Self {
             toggles_remaining: 0,
@@ -1418,6 +1569,7 @@ impl Default for BlinkFeedback {
 }
 
 impl TitleButtonState {
+    /// Creates new.
     fn new(x: f32, y: f32, width: u32, height: u32, label: &str) -> Self {
         Self {
             position: Vector2::new(x, y),
@@ -1431,6 +1583,7 @@ impl TitleButtonState {
         }
     }
 
+    /// Handles contains.
     fn contains(&self, point: Vector2) -> bool {
         point.x >= self.position.x
             && point.x <= self.position.x + self.size.x
@@ -1438,14 +1591,18 @@ impl TitleButtonState {
             && point.y <= self.position.y + self.size.y
     }
 
+    /// Sets mouse position.
     fn set_mouse_position(&mut self, mouse_position: Option<Vector2>) {
         self.hovered = mouse_position.is_some_and(|position| self.contains(position));
+        // Branch based on the current runtime condition.
         if !self.hovered {
             self.pressed = false;
         }
     }
 
+    /// Handles image.
     fn current_image(&self) -> Arc<RenderedImage> {
+        // Branch based on the current runtime condition.
         if self.pressed {
             self.pressed_image.clone()
         } else if self.hovered {
@@ -1455,6 +1612,7 @@ impl TitleButtonState {
         }
     }
 
+    /// Handles position.
     fn label_position(&self) -> Vector2 {
         Vector2::new(
             self.position.x + (self.size.x - self.label_image.width as f32) * 0.5,
@@ -1462,6 +1620,7 @@ impl TitleButtonState {
         )
     }
 
+    /// Appends renderables.
     fn append_renderables(&self, frame: &mut FrameData) {
         frame.sprites.push(Sprite {
             image: self.current_image(),
@@ -1479,7 +1638,9 @@ impl TitleButtonState {
 impl TitleAttractScene {
     const SCENE_COUNT: usize = 3;
 
+    /// Handles duration.
     const fn duration(self) -> f32 {
+        // Select the next behavior based on the current state.
         match self {
             Self::Title => 6.0,
             Self::Scoring => 8.5,
@@ -1487,7 +1648,9 @@ impl TitleAttractScene {
         }
     }
 
+    /// Handles next.
     const fn next(self) -> Self {
+        // Select the next behavior based on the current state.
         match self {
             Self::Title => Self::Scoring,
             Self::Scoring => Self::Nicknames,
@@ -1497,6 +1660,7 @@ impl TitleAttractScene {
 }
 
 impl TitleScreenState {
+    /// Creates new.
     fn new() -> Self {
         Self {
             scene: TitleAttractScene::Title,
@@ -1549,12 +1713,15 @@ impl TitleScreenState {
         }
     }
 
+    /// Updates update.
     fn update(&mut self, dt: f32, mouse_position: Option<Vector2>) {
         self.button.set_mouse_position(mouse_position);
         self.update_prompt_blink(dt);
         self.scene_timer += dt;
+        // Iterate through each item in the current collection or range.
         for _ in 0..TitleAttractScene::SCENE_COUNT {
             let duration = self.scene.duration();
+            // Branch based on the current runtime condition.
             if self.scene_timer < duration {
                 break;
             }
@@ -1563,20 +1730,24 @@ impl TitleScreenState {
             self.on_scene_changed();
         }
 
+        // Branch based on the current runtime condition.
         if self.scene == TitleAttractScene::Scoring {
             self.pacman_sprites.update(dt, Direction::Right);
         }
     }
 
+    /// Starts requested.
     fn start_requested(
         &mut self,
         start_requested: bool,
         mouse_click_position: Option<Vector2>,
     ) -> bool {
+        // Branch based on the current runtime condition.
         if start_requested {
             return true;
         }
 
+        // Branch based on the current runtime condition.
         if mouse_click_position.is_some_and(|position| self.click_starts(position)) {
             self.button.pressed = true;
             return true;
@@ -1585,7 +1756,9 @@ impl TitleScreenState {
         false
     }
 
+    /// Updates prompt blink.
     fn update_prompt_blink(&mut self, dt: f32) {
+        // Branch based on the current runtime condition.
         if self.scene != TitleAttractScene::Title {
             self.prompt_visible = false;
             self.prompt_blink_timer = 0.0;
@@ -1595,35 +1768,44 @@ impl TitleScreenState {
         self.prompt_blink_timer += dt;
         let toggles = (self.prompt_blink_timer / 0.35) as usize;
         self.prompt_blink_timer -= toggles as f32 * 0.35;
+        // Branch based on the current runtime condition.
         if toggles % 2 == 1 {
             self.prompt_visible = !self.prompt_visible;
         }
     }
 
+    /// Handles scene changed.
     fn on_scene_changed(&mut self) {
         self.pacman_sprites.reset();
+        // Branch based on the current runtime condition.
         if self.scene == TitleAttractScene::Title {
             self.prompt_visible = true;
             self.prompt_blink_timer = 0.0;
         }
     }
 
+    /// Appends renderables.
     fn append_renderables(&self, frame: &mut FrameData) {
+        // Select the next behavior based on the current state.
         match self.scene {
             TitleAttractScene::Title => self.append_title_scene(frame),
             TitleAttractScene::Scoring => self.append_scoring_scene(frame),
             TitleAttractScene::Nicknames => self.append_nickname_scene(frame),
         }
+        // Branch based on the current runtime condition.
         if self.shows_button() {
             self.button.append_renderables(frame);
         }
     }
 
+    /// Handles button.
     fn shows_button(&self) -> bool {
         self.scene == TitleAttractScene::Title
     }
 
+    /// Handles starts.
     fn click_starts(&self, position: Vector2) -> bool {
+        // Branch based on the current runtime condition.
         if self.shows_button() {
             self.button.contains(position)
         } else {
@@ -1631,10 +1813,12 @@ impl TitleScreenState {
         }
     }
 
+    /// Appends title scene.
     fn append_title_scene(&self, frame: &mut FrameData) {
         append_centered_text(frame, &self.title_image, 68.0);
         append_centered_text(frame, &self.company_image, 168.0);
         append_centered_text(frame, &self.bonus_image, 204.0);
+        // Branch based on the current runtime condition.
         if self.prompt_visible {
             append_centered_text(frame, &self.push_start_image, 286.0);
         }
@@ -1642,6 +1826,7 @@ impl TitleScreenState {
         append_centered_text(frame, &self.two_player_image, 364.0);
     }
 
+    /// Appends scoring scene.
     fn append_scoring_scene(&self, frame: &mut FrameData) {
         append_centered_text(frame, &self.scoring_image, 44.0);
 
@@ -1669,7 +1854,9 @@ impl TitleScreenState {
             Some(6.0),
         );
 
+        // Iterate through each item in the current collection or range.
         for (index, x) in ghost_positions.into_iter().enumerate() {
+            // Branch based on the current runtime condition.
             if self.scene_timer >= eaten_times[index] {
                 let score = &self.ghost_score_images[index];
                 append_text(frame, score, x - score.width as f32 * 0.5, 248.0);
@@ -1680,6 +1867,7 @@ impl TitleScreenState {
 
         let chase_window_start = 1.0;
         let chase_window_end = 4.1;
+        // Branch based on the current runtime condition.
         if self.scene_timer >= chase_window_start {
             let progress = ((self.scene_timer - chase_window_start)
                 / (chase_window_end - chase_window_start))
@@ -1698,6 +1886,7 @@ impl TitleScreenState {
             Vector2::new(272.0, 470.0),
             Vector2::new(360.0, 470.0),
         ];
+        // Iterate through each item in the current collection or range.
         for (index, position) in fruit_positions.into_iter().enumerate() {
             append_actor_sprite(frame, self.fruit_sprites.item_image(index), position);
             let score = &self.fruit_score_images[index];
@@ -1710,12 +1899,15 @@ impl TitleScreenState {
         }
     }
 
+    /// Appends nickname scene.
     fn append_nickname_scene(&self, frame: &mut FrameData) {
         append_centered_text(frame, &self.character_image, 36.0);
         append_centered_text(frame, &self.nickname_image, 72.0);
 
+        // Iterate through each item in the current collection or range.
         for (index, row) in self.nickname_rows.iter().enumerate() {
             let local_time = self.scene_timer - index as f32 * 1.1;
+            // Branch based on the current runtime condition.
             if local_time < 0.0 {
                 continue;
             }
@@ -1728,6 +1920,7 @@ impl TitleScreenState {
                     .image(row.kind, GhostMode::Chase, Direction::Right, None, None);
             append_actor_sprite(frame, ghost_image, Vector2::new(center_x, center_y));
 
+            // Branch based on the current runtime condition.
             if local_time >= 0.2 {
                 append_text(frame, &row.nickname_image, 128.0, center_y - 18.0);
                 append_text(frame, &row.name_image, 320.0, center_y - 18.0);
@@ -1737,6 +1930,7 @@ impl TitleScreenState {
 }
 
 impl AttractNicknameRow {
+    /// Creates new.
     fn new(kind: GhostKind, nickname: &str, name: &str, name_color: [u8; 4]) -> Self {
         Self {
             kind,
@@ -1746,6 +1940,7 @@ impl AttractNicknameRow {
     }
 }
 
+/// Appends text.
 fn append_text(frame: &mut FrameData, image: &Arc<RenderedImage>, x: f32, y: f32) {
     frame.sprites.push(Sprite {
         image: image.clone(),
@@ -1754,6 +1949,7 @@ fn append_text(frame: &mut FrameData, image: &Arc<RenderedImage>, x: f32, y: f32
     });
 }
 
+/// Appends centered text.
 fn append_centered_text(frame: &mut FrameData, image: &Arc<RenderedImage>, y: f32) {
     append_text(
         frame,
@@ -1763,6 +1959,7 @@ fn append_centered_text(frame: &mut FrameData, image: &Arc<RenderedImage>, y: f3
     );
 }
 
+/// Appends actor sprite.
 fn append_actor_sprite(frame: &mut FrameData, image: Arc<RenderedImage>, center: Vector2) {
     frame.sprites.push(Sprite {
         image,
@@ -1772,6 +1969,7 @@ fn append_actor_sprite(frame: &mut FrameData, image: Arc<RenderedImage>, center:
 }
 
 impl AppState {
+    /// Creates new.
     fn new() -> Self {
         Self {
             title_screen: TitleScreenState::new(),
@@ -1780,7 +1978,9 @@ impl AppState {
         }
     }
 
+    /// Updates update.
     fn update(&mut self, dt: f32, input: &UpdateInput) {
+        // Branch based on the current runtime condition.
         if let Some(gameplay) = &mut self.gameplay {
             gameplay.update(
                 dt,
@@ -1790,6 +1990,7 @@ impl AppState {
             );
             self.events.extend(gameplay.drain_events());
 
+            // Branch based on the current runtime condition.
             if gameplay.return_to_title_requested {
                 self.gameplay = None;
                 self.title_screen = TitleScreenState::new();
@@ -1803,6 +2004,7 @@ impl AppState {
             .title_screen
             .start_requested(input.start_requested, input.mouse_click_position);
 
+        // Branch based on the current runtime condition.
         if input
             .mouse_click_position
             .is_some_and(|position| self.title_screen.click_starts(position))
@@ -1810,17 +2012,21 @@ impl AppState {
             self.events.push(GameEvent::ButtonClicked);
         }
 
+        // Branch based on the current runtime condition.
         if should_start {
             self.gameplay = Some(GameplayState::new());
             self.events.push(GameEvent::GameStarted);
         }
     }
 
+    /// Handles events.
     fn drain_events(&mut self) -> Vec<GameEvent> {
         std::mem::take(&mut self.events)
     }
 
+    /// Appends renderables.
     fn append_renderables(&self, frame: &mut FrameData) {
+        // Branch based on the current runtime condition.
         if let Some(gameplay) = &self.gameplay {
             gameplay.append_renderables(frame);
         } else {
@@ -1829,11 +2035,14 @@ impl AppState {
     }
 }
 
+/// Handles image.
 fn button_image(width: u32, height: u32, fill: [u8; 4], border: [u8; 4]) -> Arc<RenderedImage> {
     let mut pixels = vec![0; width as usize * height as usize * 4];
     let border_thickness = 3;
 
+    // Iterate through each item in the current collection or range.
     for y in 0..height {
+        // Iterate through each item in the current collection or range.
         for x in 0..width {
             let color = if x < border_thickness
                 || y < border_thickness
@@ -1871,6 +2080,7 @@ mod tests {
         vector::Vector2,
     };
 
+    /// Starts game.
     fn start_game(game: &mut Game) {
         let _ = game.drain_events();
         game.update_with_input(
@@ -1885,6 +2095,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles screen emits an entered event.
     fn title_screen_emits_an_entered_event() {
         let mut game = Game::new();
 
@@ -1892,6 +2103,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles starts the gameplay screen.
     fn enter_starts_the_gameplay_screen() {
         let mut game = Game::new();
         start_game(&mut game);
@@ -1900,6 +2112,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles click starts the gameplay screen.
     fn button_click_starts_the_gameplay_screen() {
         let mut game = Game::new();
         let _ = game.drain_events();
@@ -1926,6 +2139,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles click uses the click position.
     fn button_click_uses_the_click_position() {
         let mut game = Game::new();
         let _ = game.drain_events();
@@ -1950,6 +2164,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles renders background and sprites.
     fn gameplay_renders_background_and_sprites() {
         let mut game = Game::new();
         start_game(&mut game);
@@ -1960,6 +2175,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles screen cycles through midway attract scenes.
     fn title_screen_cycles_through_midway_attract_scenes() {
         let mut title = TitleScreenState::new();
 
@@ -1974,6 +2190,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles can start from scoring scene.
     fn enter_can_start_from_scoring_scene() {
         let mut game = Game::new();
         let _ = game.drain_events();
@@ -1995,6 +2212,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles scene does not render the start button.
     fn scoring_scene_does_not_render_the_start_button() {
         let mut title = TitleScreenState::new();
         title.update(TitleAttractScene::Title.duration() + 0.1, None);
@@ -2012,6 +2230,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles mode keeps the original maze on level two.
     fn arcade_mode_keeps_the_original_maze_on_level_two() {
         let state = GameplayState::start_level(2, 5, 0, Vec::new());
 
@@ -2022,6 +2241,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles updates the death animation while paused.
     fn gameplay_updates_the_death_animation_while_paused() {
         let mut state = GameplayState::new();
         let before = state.pacman_sprites.current();
@@ -2033,6 +2253,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles sprites use arcade draw offset.
     fn gameplay_sprites_use_arcade_draw_offset() {
         let state = GameplayState::new();
         let mut frame = FrameData::default();
@@ -2049,6 +2270,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles pacman sprite tracks direction.
     fn gameplay_pacman_sprite_tracks_direction() {
         let mut state = GameplayState::new();
         state.pause.set_paused(false);
@@ -2068,6 +2290,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles mode temporarily allows red zone up turns.
     fn frightened_mode_temporarily_allows_red_zone_up_turns() {
         let mut state = GameplayState::new();
         let red_zone = state
@@ -2101,6 +2324,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles mode keeps red zone override after ghost reset.
     fn freight_mode_keeps_red_zone_override_after_ghost_reset() {
         let mut state = GameplayState::new();
         let red_zone = state
@@ -2121,6 +2345,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles mode keeps red zone override after level rebuild.
     fn freight_mode_keeps_red_zone_override_after_level_rebuild() {
         let mut state = GameplayState::start_level(1, 5, 0, Vec::new());
         let flags = SecretModeFlags {
@@ -2148,6 +2373,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles quits when secret mode is inactive.
     fn q_quits_when_secret_mode_is_inactive() {
         let mut game = Game::new();
 
@@ -2164,6 +2390,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles quits even when secret mode is active.
     fn q_quits_even_when_secret_mode_is_active() {
         let mut game = Game::new();
         start_game(&mut game);
@@ -2191,6 +2418,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles toggles secret mode and starts blink feedback.
     fn xyzzy_toggles_secret_mode_and_starts_blink_feedback() {
         let mut state = GameplayState::new();
 
@@ -2212,6 +2440,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles a toggles autopilot and secret mode off disables it.
     fn secret_a_toggles_autopilot_and_secret_mode_off_disables_it() {
         let mut state = GameplayState::new();
 
@@ -2231,6 +2460,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles f toggles freight mode without requesting quit.
     fn secret_f_toggles_freight_mode_without_requesting_quit() {
         let mut game = Game::new();
         start_game(&mut game);
@@ -2276,6 +2506,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles events track direct mode transitions.
     fn freight_events_track_direct_mode_transitions() {
         let mut state = GameplayState::new();
 
@@ -2289,6 +2520,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles t teleports pacman to the safest node.
     fn secret_t_teleports_pacman_to_the_safest_node() {
         let mut state = GameplayState::new();
         state.easter_egg_active = true;
@@ -2316,6 +2548,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles r sends ghosts back to their start positions.
     fn secret_r_sends_ghosts_back_to_their_start_positions() {
         let mut state = GameplayState::new();
         state.easter_egg_active = true;
@@ -2331,14 +2564,18 @@ mod tests {
         assert_eq!(reset_positions, expected_positions);
     }
 
+    /// Runs secret autopilot until done.
     fn run_secret_autopilot_until_done(state: &mut GameplayState, step_limit: usize) -> bool {
         let dt = ORIGINAL_FRAME_TIME;
+        // Iterate through each item in the current collection or range.
         for _ in 0..step_limit {
             state.update_headless(dt);
             let events = state.drain_events();
+            // Branch based on the current runtime condition.
             if events.contains(&GameEvent::PacmanDied) {
                 return false;
             }
+            // Branch based on the current runtime condition.
             if events.contains(&GameEvent::LevelCompleted) || state.pellets.is_empty() {
                 return true;
             }
@@ -2347,6 +2584,7 @@ mod tests {
         false
     }
 
+    /// Handles pellet reset state.
     fn single_pellet_reset_state(target: Vector2) -> GameplayState {
         let mut state = GameplayState::new();
         let positions: Vec<_> = state
@@ -2354,7 +2592,9 @@ mod tests {
             .iter()
             .map(|pellet| pellet.position())
             .collect();
+        // Iterate through each item in the current collection or range.
         for position in positions {
+            // Branch based on the current runtime condition.
             if position != target {
                 let removed = state.pellets.try_eat(position, 0.0);
                 assert!(removed.is_some(), "expected pellet at {position}");
@@ -2370,6 +2610,7 @@ mod tests {
 
     #[test]
     #[ignore = "expensive end-to-end autopilot simulation"]
+    /// Handles autopilot clears the level without losing a life.
     fn secret_autopilot_clears_the_level_without_losing_a_life() {
         fastrand::seed(7);
 
@@ -2378,6 +2619,7 @@ mod tests {
         state.easter_egg_active = true;
         state.easter_egg_autopilot.toggle();
         let starting_lives = state.lives;
+        // Branch based on the current runtime condition.
         if !run_secret_autopilot_until_done(&mut state, 8_000) {
             panic!(
                 "autopilot died after eating {} pellets: {:?}",
@@ -2390,6 +2632,7 @@ mod tests {
 
     #[test]
     #[ignore = "expensive secret autopilot regression"]
+    /// Handles autopilot handles top centre last pellet resets.
     fn secret_autopilot_handles_top_centre_last_pellet_resets() {
         let failing_positions = [
             Vector2::new(192.0, 80.0),
@@ -2399,6 +2642,7 @@ mod tests {
             Vector2::new(192.0, 112.0),
         ];
 
+        // Iterate through each item in the current collection or range.
         for target in failing_positions {
             fastrand::seed(7);
             let mut state = single_pellet_reset_state(target);

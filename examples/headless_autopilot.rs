@@ -1,12 +1,16 @@
+//! Runs the headless autopilot simulator for regression checks and performance sampling.
+
 use pacman::game::{HeadlessAutopilotStopReason, run_headless_autopilot};
 use std::io::Write;
 
+/// Parses arg.
 fn parse_arg(args: &[String], index: usize, default: u64) -> u64 {
     args.get(index)
         .and_then(|value| value.parse().ok())
         .unwrap_or(default)
 }
 
+/// Handles main.
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let start_seed = parse_arg(&args, 1, 0);
@@ -19,6 +23,7 @@ fn main() {
     let mut total_fruit = 0u64;
     let mut deaths = 0u64;
 
+    // Iterate through each item in the current collection or range.
     for offset in 0..runs {
         let seed = start_seed + offset as u64;
         let report = run_headless_autopilot(seed, max_steps);
@@ -26,6 +31,7 @@ fn main() {
         total_pellets += report.pellets_eaten as u64;
         total_ghosts += report.ghosts_eaten as u64;
         total_fruit += report.fruit_eaten as u64;
+        // Branch based on the current runtime condition.
         if report.stop_reason == HeadlessAutopilotStopReason::PacmanDied {
             deaths += 1;
         }
@@ -41,6 +47,7 @@ fn main() {
             report.score,
             report.steps,
         );
+        // Branch based on the current runtime condition.
         if let Some(snapshot) = &report.death_snapshot {
             println!(
                 "death level={} lives={} pellets_remaining={} pacman=({:.1},{:.1}) dir={:?}",

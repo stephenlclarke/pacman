@@ -1,3 +1,5 @@
+//! Runs the terminal application loop, input polling, fixed-timestep updates, and final frame presentation.
+
 use std::{
     io::{Write, stdout},
     time::{Duration, Instant},
@@ -22,6 +24,7 @@ use crate::{
 
 const MAX_DT: f32 = 0.1;
 
+/// Runs run.
 pub fn run() -> Result<()> {
     parse_args(std::env::args().skip(1))?;
 
@@ -38,6 +41,7 @@ pub fn run() -> Result<()> {
     let mut input = InputController::default();
     let mut game = Game::new();
     let mut audio = AudioManager::new();
+    // Iterate through each item in the current collection or range.
     for event in game.drain_events() {
         audio.handle_event(event);
     }
@@ -47,10 +51,12 @@ pub fn run() -> Result<()> {
     let mut accumulator = 0.0f32;
     let mut last_tick = Instant::now();
 
+    // Keep looping until a break condition exits the block.
     loop {
         let frame_started = Instant::now();
         sync_terminal_geometry(&mut terminal_geometry, &mut renderer, &mut graphics)?;
 
+        // Branch based on the current runtime condition.
         if poll_input(&mut input)? {
             break;
         }
@@ -64,6 +70,7 @@ pub fn run() -> Result<()> {
             collect_update_input(&mut input, &renderer, terminal_geometry),
         );
 
+        // Branch based on the current runtime condition.
         if advance_game(&mut game, &mut pending_input, &mut accumulator, frame_time) {
             break;
         }
@@ -76,6 +83,7 @@ pub fn run() -> Result<()> {
             &mut stdout,
         )?;
 
+        // Branch based on the current runtime condition.
         if wait_for_next_frame(&mut input, frame_started, frame_duration)? {
             break;
         }
@@ -87,12 +95,14 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
+/// Synchronizes terminal geometry.
 fn sync_terminal_geometry(
     terminal_geometry: &mut crate::terminal::TerminalGeometry,
     renderer: &mut Renderer,
     graphics: &mut KittyGraphics,
 ) -> Result<()> {
     let latest_geometry = geometry()?;
+    // Branch based on the current runtime condition.
     if latest_geometry != *terminal_geometry {
         *terminal_geometry = latest_geometry;
         renderer.resize(*terminal_geometry);
@@ -101,11 +111,13 @@ fn sync_terminal_geometry(
     Ok(())
 }
 
+/// Polls input.
 fn poll_input(input: &mut InputController) -> Result<bool> {
     input.poll()?;
     Ok(input.quit_requested())
 }
 
+/// Collects update input.
 fn collect_update_input(
     input: &mut InputController,
     renderer: &Renderer,
@@ -125,6 +137,7 @@ fn collect_update_input(
     }
 }
 
+/// Translates scene position.
 fn mouse_scene_position(
     mouse_cell: Option<MouseCell>,
     renderer: &Renderer,
@@ -139,6 +152,7 @@ fn mouse_scene_position(
     })
 }
 
+/// Advances game.
 fn advance_game(
     game: &mut Game,
     pending_input: &mut UpdateInput,
@@ -146,6 +160,7 @@ fn advance_game(
     frame_time: f32,
 ) -> bool {
     let steps = whole_steps(accumulator, frame_time);
+    // Iterate through each item in the current collection or range.
     for step_index in 0..steps {
         let step_input = if step_index == 0 {
             pending_input.clone()
@@ -153,22 +168,26 @@ fn advance_game(
             step_input_without_one_shots(pending_input)
         };
         game.update_with_input(frame_time, step_input);
+        // Branch based on the current runtime condition.
         if game.quit_requested() {
             return true;
         }
     }
+    // Branch based on the current runtime condition.
     if steps > 0 {
         clear_one_shots(pending_input);
     }
     game.quit_requested()
 }
 
+/// Handles steps.
 fn whole_steps(accumulator: &mut f32, frame_time: f32) -> usize {
     let steps = (*accumulator / frame_time) as usize;
     *accumulator -= steps as f32 * frame_time;
     steps
 }
 
+/// Renders frame.
 fn render_frame(
     game: &mut Game,
     audio: &mut AudioManager,
@@ -176,6 +195,7 @@ fn render_frame(
     graphics: &mut KittyGraphics,
     stdout: &mut std::io::Stdout,
 ) -> Result<()> {
+    // Iterate through each item in the current collection or range.
     for event in game.drain_events() {
         audio.handle_event(event);
     }
@@ -186,29 +206,34 @@ fn render_frame(
     Ok(())
 }
 
+/// Waits for for next frame.
 fn wait_for_next_frame(
     input: &mut InputController,
     frame_started: Instant,
     frame_duration: Duration,
 ) -> Result<bool> {
     let elapsed = frame_started.elapsed();
+    // Branch based on the current runtime condition.
     if elapsed < frame_duration {
         input.poll_for(frame_duration - elapsed)?;
     }
     Ok(input.quit_requested())
 }
 
+/// Merges input.
 fn merge_input(pending: &mut UpdateInput, next: UpdateInput) {
     pending.requested_direction = next.requested_direction;
     pending.mouse_position = next.mouse_position;
     pending.pause_requested |= next.pause_requested;
     pending.start_requested |= next.start_requested;
+    // Branch based on the current runtime condition.
     if next.mouse_click_position.is_some() {
         pending.mouse_click_position = next.mouse_click_position;
     }
     pending.typed_chars.extend(next.typed_chars);
 }
 
+/// Clears one shots.
 fn clear_one_shots(pending: &mut UpdateInput) {
     pending.pause_requested = false;
     pending.start_requested = false;
@@ -216,6 +241,7 @@ fn clear_one_shots(pending: &mut UpdateInput) {
     pending.typed_chars.clear();
 }
 
+/// Handles input without one shots.
 fn step_input_without_one_shots(pending: &UpdateInput) -> UpdateInput {
     UpdateInput {
         requested_direction: pending.requested_direction,
@@ -227,12 +253,15 @@ fn step_input_without_one_shots(pending: &UpdateInput) -> UpdateInput {
     }
 }
 
+/// Parses args.
 fn parse_args(args: impl Iterator<Item = String>) -> Result<()> {
     let args: Vec<String> = args.collect();
+    // Branch based on the current runtime condition.
     if args.is_empty() {
         return Ok(());
     }
 
+    // Select the next behavior based on the current state.
     match args.as_slice() {
         [flag] if matches!(flag.as_str(), "-h" | "--help") => {
             print_help();
@@ -251,6 +280,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<()> {
     }
 }
 
+/// Prints help.
 fn print_help() {
     println!(
         "Usage: cargo run [-- --help]
@@ -284,11 +314,13 @@ mod tests {
     };
 
     #[test]
+    /// Handles arguments launch the default game.
     fn no_arguments_launch_the_default_game() {
         parse_args(std::iter::empty()).expect("argument parsing should succeed");
     }
 
     #[test]
+    /// Handles arguments are rejected.
     fn explicit_arguments_are_rejected() {
         let error = parse_args(std::iter::once(String::from("legacy-mode")))
             .expect_err("parsing should fail");
@@ -301,6 +333,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles arguments are rejected.
     fn extra_arguments_are_rejected() {
         let error = parse_args([String::from("legacy-mode"), String::from("extra")].into_iter())
             .expect_err("parsing should fail");
@@ -313,6 +346,7 @@ mod tests {
     }
 
     #[test]
+    /// Merges input keeps latest continuous state and accumulates one shots.
     fn merge_input_keeps_latest_continuous_state_and_accumulates_one_shots() {
         let mut pending = UpdateInput::default();
         merge_input(
@@ -347,6 +381,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles fixed steps drop one shots but keep continuous inputs.
     fn later_fixed_steps_drop_one_shots_but_keep_continuous_inputs() {
         let pending = UpdateInput {
             requested_direction: Direction::Right,
@@ -368,6 +403,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles one shots preserves continuous inputs.
     fn clearing_one_shots_preserves_continuous_inputs() {
         let mut pending = UpdateInput {
             requested_direction: Direction::Down,
@@ -389,6 +425,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles steps consumes complete frames and preserves remainder.
     fn whole_steps_consumes_complete_frames_and_preserves_remainder() {
         let mut accumulator = ORIGINAL_FRAME_TIME * 2.5;
 
@@ -399,6 +436,7 @@ mod tests {
     }
 
     #[test]
+    /// Advances game clears one shots after processing steps.
     fn advance_game_clears_one_shots_after_processing_steps() {
         let mut game = Game::new();
         let mut pending = UpdateInput {
@@ -429,6 +467,7 @@ mod tests {
     }
 
     #[test]
+    /// Translates scene position projects terminal cells into scene coordinates.
     fn mouse_scene_position_projects_terminal_cells_into_scene_coordinates() {
         let geometry = TerminalGeometry {
             cols: 80,
@@ -448,6 +487,7 @@ mod tests {
     }
 
     #[test]
+    /// Translates scene position returns none for empty terminal geometry.
     fn mouse_scene_position_returns_none_for_empty_terminal_geometry() {
         let geometry = TerminalGeometry {
             cols: 0,
@@ -467,6 +507,7 @@ mod tests {
     }
 
     #[test]
+    /// Waits for for next frame returns current quit state when frame is elapsed.
     fn wait_for_next_frame_returns_current_quit_state_when_frame_is_elapsed() {
         let mut input = InputController::default();
         let frame_started = Instant::now()

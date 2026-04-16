@@ -1,3 +1,5 @@
+//! Embeds the game sound effects and coordinates audio playback for emitted gameplay events.
+
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -39,7 +41,9 @@ pub struct AudioManager {
 }
 
 impl SoundAsset {
+    /// Handles name.
     const fn file_name(self) -> &'static str {
+        // Select the next behavior based on the current state.
         match self {
             Self::ButtonClick => "button_click.ogg",
             Self::Death => "death.wav",
@@ -53,22 +57,25 @@ impl SoundAsset {
         }
     }
 
+    /// Handles bytes.
     const fn bytes(self) -> &'static [u8] {
+        // Select the next behavior based on the current state.
         match self {
-            Self::ButtonClick => include_bytes!("../assets/Sounds/button_click.ogg"),
-            Self::Death => include_bytes!("../assets/Sounds/death.wav"),
-            Self::FreightMode => include_bytes!("../assets/Sounds/fright_mode_short.wav"),
-            Self::FruitEat => include_bytes!("../assets/Sounds/fruit_eat.wav"),
-            Self::GhostEat => include_bytes!("../assets/Sounds/ghost_eat.wav"),
-            Self::LevelComplete => include_bytes!("../assets/Sounds/level_complete.wav"),
-            Self::LevelStart => include_bytes!("../assets/Sounds/level_start.wav"),
-            Self::Music => include_bytes!("../assets/Sounds/music.ogg"),
-            Self::SmallPellet => include_bytes!("../assets/Sounds/small_pellet2.wav"),
+            Self::ButtonClick => include_bytes!("../assets/sounds/button_click.ogg"),
+            Self::Death => include_bytes!("../assets/sounds/death.wav"),
+            Self::FreightMode => include_bytes!("../assets/sounds/fright_mode_short.wav"),
+            Self::FruitEat => include_bytes!("../assets/sounds/fruit_eat.wav"),
+            Self::GhostEat => include_bytes!("../assets/sounds/ghost_eat.wav"),
+            Self::LevelComplete => include_bytes!("../assets/sounds/level_complete.wav"),
+            Self::LevelStart => include_bytes!("../assets/sounds/level_start.wav"),
+            Self::Music => include_bytes!("../assets/sounds/music.ogg"),
+            Self::SmallPellet => include_bytes!("../assets/sounds/small_pellet2.wav"),
         }
     }
 }
 
 impl LoopingAudio {
+    /// Handles play.
     fn play(&mut self, path: PathBuf) {
         self.stop();
 
@@ -76,6 +83,7 @@ impl LoopingAudio {
         let stop_flag = stop.clone();
         let child_slot = self.child.clone();
         self.thread = Some(thread::spawn(move || {
+            // Continue processing while the guard condition remains true.
             while !stop_flag.load(Ordering::SeqCst) {
                 let child = Command::new("/usr/bin/afplay")
                     .arg(&path)
@@ -107,6 +115,7 @@ impl LoopingAudio {
                     *slot = None;
                 }
 
+                // Branch based on the current runtime condition.
                 if wait_result.is_err() {
                     break;
                 }
@@ -115,11 +124,14 @@ impl LoopingAudio {
         self.stop = Some(stop);
     }
 
+    /// Stops stop.
     fn stop(&mut self) {
+        // Branch based on the current runtime condition.
         if let Some(stop) = &self.stop {
             stop.store(true, Ordering::SeqCst);
         }
 
+        // Branch based on the current runtime condition.
         if let Some(child) = self
             .child
             .lock()
@@ -130,6 +142,7 @@ impl LoopingAudio {
             let _ = child.wait();
         }
 
+        // Branch based on the current runtime condition.
         if let Some(handle) = self.thread.take() {
             let _ = handle.join();
         }
@@ -139,6 +152,7 @@ impl LoopingAudio {
 }
 
 impl AudioManager {
+    /// Creates new.
     pub fn new() -> Self {
         Self {
             enabled: Path::new("/usr/bin/afplay").exists(),
@@ -147,11 +161,14 @@ impl AudioManager {
         }
     }
 
+    /// Handles event.
     pub fn handle_event(&mut self, event: GameEvent) {
+        // Branch based on the current runtime condition.
         if !self.enabled {
             return;
         }
 
+        // Select the next behavior based on the current state.
         match event {
             GameEvent::TitleScreenEntered => {
                 self.stop_freight_sound();
@@ -180,26 +197,33 @@ impl AudioManager {
         }
     }
 
+    /// Handles title music.
     fn play_title_music(&mut self) {
+        // Branch based on the current runtime condition.
         if let Some(path) = sound_path(SoundAsset::Music) {
             self.title_music.play(path);
         }
     }
 
+    /// Stops title music.
     fn stop_title_music(&mut self) {
         self.title_music.stop();
     }
 
+    /// Handles freight sound.
     fn play_freight_sound(&mut self) {
+        // Branch based on the current runtime condition.
         if let Some(path) = sound_path(SoundAsset::FreightMode) {
             self.freight_sound.play(path);
         }
     }
 
+    /// Stops freight sound.
     fn stop_freight_sound(&mut self) {
         self.freight_sound.stop();
     }
 
+    /// Handles effect.
     fn play_effect(&self, sound: SoundAsset) {
         let Some(path) = sound_path(sound) else {
             return;
@@ -214,14 +238,17 @@ impl AudioManager {
 }
 
 impl Drop for AudioManager {
+    /// Handles drop.
     fn drop(&mut self) {
         self.stop_title_music();
         self.stop_freight_sound();
     }
 }
 
+/// Handles path.
 fn sound_path(sound: SoundAsset) -> Option<PathBuf> {
     let path = cached_sound_path(sound);
+    // Branch based on the current runtime condition.
     if ensure_embedded_sound(sound, &path).is_ok() {
         Some(path)
     } else {
@@ -229,6 +256,7 @@ fn sound_path(sound: SoundAsset) -> Option<PathBuf> {
     }
 }
 
+/// Handles sound path.
 fn cached_sound_path(sound: SoundAsset) -> PathBuf {
     env::temp_dir()
         .join("pacman")
@@ -237,9 +265,11 @@ fn cached_sound_path(sound: SoundAsset) -> PathBuf {
         .join(sound.file_name())
 }
 
+/// Ensures embedded sound.
 fn ensure_embedded_sound(sound: SoundAsset, path: &Path) -> std::io::Result<()> {
     let bytes = sound.bytes();
 
+    // Branch based on the current runtime condition.
     if path
         .metadata()
         .map(|meta| meta.len() == bytes.len() as u64)
@@ -248,6 +278,7 @@ fn ensure_embedded_sound(sound: SoundAsset, path: &Path) -> std::io::Result<()> 
         return Ok(());
     }
 
+    // Branch based on the current runtime condition.
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -260,6 +291,7 @@ mod tests {
 
     use super::{LoopingAudio, SoundAsset, cached_sound_path, ensure_embedded_sound, sound_path};
 
+    /// Handles assets.
     fn all_assets() -> [SoundAsset; 9] {
         [
             SoundAsset::ButtonClick,
@@ -275,6 +307,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles sound cache uses the temp directory.
     fn embedded_sound_cache_uses_the_temp_directory() {
         let path = cached_sound_path(SoundAsset::Music);
 
@@ -282,6 +315,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles sound files can be materialized for playback.
     fn embedded_sound_files_can_be_materialized_for_playback() {
         let path = sound_path(SoundAsset::Music).expect("embedded music should materialize");
 
@@ -295,6 +329,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles sound matches embedded length.
     fn materialized_sound_matches_embedded_length() {
         let path = cached_sound_path(SoundAsset::ButtonClick);
         ensure_embedded_sound(SoundAsset::ButtonClick, &path)
@@ -309,7 +344,9 @@ mod tests {
     }
 
     #[test]
+    /// Handles embedded sound asset has bytes and a cache path.
     fn every_embedded_sound_asset_has_bytes_and_a_cache_path() {
+        // Iterate through each item in the current collection or range.
         for sound in all_assets() {
             let path = cached_sound_path(sound);
             assert!(path.starts_with(std::env::temp_dir()));
@@ -326,7 +363,9 @@ mod tests {
     }
 
     #[test]
+    /// Handles embedded sound asset can be materialized.
     fn every_embedded_sound_asset_can_be_materialized() {
+        // Iterate through each item in the current collection or range.
         for sound in all_assets() {
             let path = sound_path(sound).unwrap_or_else(|| PathBuf::from(sound.file_name()));
             assert!(
@@ -344,6 +383,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles audio stop is safe without an active child.
     fn looping_audio_stop_is_safe_without_an_active_child() {
         let mut looping = LoopingAudio::default();
         looping.stop();

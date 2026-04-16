@@ -1,3 +1,5 @@
+//! Exposes the modules that make up the Pac-Man application, renderer, and game systems.
+
 pub mod actors;
 pub mod animation;
 pub mod app;

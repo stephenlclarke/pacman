@@ -1,3 +1,5 @@
+//! Defines the software renderer and raster primitives used to turn frame data into RGBA images.
+
 use std::sync::Arc;
 
 use crate::{
@@ -10,6 +12,7 @@ use crate::{
 struct Color(u8, u8, u8, u8);
 
 impl Color {
+    /// Handles rgba.
     fn from_rgba([r, g, b, a]: [u8; 4]) -> Self {
         Self(r, g, b, a)
     }
@@ -72,6 +75,7 @@ struct SceneTransform {
 }
 
 impl Renderer {
+    /// Creates new.
     pub fn new(geometry: TerminalGeometry) -> Self {
         let (image_width, image_height) = raster_size(geometry);
         Self {
@@ -81,6 +85,7 @@ impl Renderer {
         }
     }
 
+    /// Handles resize.
     pub fn resize(&mut self, geometry: TerminalGeometry) {
         let (image_width, image_height) = raster_size(geometry);
         self.image_width = image_width;
@@ -88,11 +93,13 @@ impl Renderer {
         self.render_target.resize(image_width, image_height);
     }
 
+    /// Renders render.
     pub fn render(&mut self, frame: &FrameData) -> &RenderedImage {
         self.render_target.clear(Color::from_rgba(BLACK));
 
         let transform = SceneTransform::new(self.image_width as f32, self.image_height as f32);
 
+        // Branch based on the current runtime condition.
         if let Some(background) = &frame.background {
             let (x, y, width, height) = transform.rect(
                 Vector2::default(),
@@ -104,6 +111,7 @@ impl Renderer {
                 .draw_image(background, x, y, width, height);
         }
 
+        // Iterate through each item in the current collection or range.
         for line in &frame.lines {
             let (start_x, start_y) = transform.point(line.start);
             let (end_x, end_y) = transform.point(line.end);
@@ -117,6 +125,7 @@ impl Renderer {
             );
         }
 
+        // Iterate through each item in the current collection or range.
         for circle in &frame.circles {
             let (center_x, center_y, radius) =
                 transform.circle(circle.center.x, circle.center.y, circle.radius);
@@ -128,6 +137,7 @@ impl Renderer {
             );
         }
 
+        // Iterate through each item in the current collection or range.
         for sprite in &frame.sprites {
             let (x, y, width, height) = transform.rect(
                 sprite.position,
@@ -142,12 +152,14 @@ impl Renderer {
         &self.render_target
     }
 
+    /// Handles position for terminal cell.
     pub fn scene_position_for_terminal_cell(
         &self,
         geometry: TerminalGeometry,
         column: u16,
         row: u16,
     ) -> Option<Vector2> {
+        // Branch based on the current runtime condition.
         if geometry.cols == 0 || geometry.rows == 0 {
             return None;
         }
@@ -161,6 +173,7 @@ impl Renderer {
 }
 
 impl RenderedImage {
+    /// Creates blank.
     fn new_blank(width: u32, height: u32) -> Self {
         Self {
             width,
@@ -169,13 +182,16 @@ impl RenderedImage {
         }
     }
 
+    /// Handles resize.
     fn resize(&mut self, width: u32, height: u32) {
         self.width = width;
         self.height = height;
         self.pixels.resize(width as usize * height as usize * 4, 0);
     }
 
+    /// Clears clear.
     fn clear(&mut self, color: Color) {
+        // Iterate through each item in the current collection or range.
         for pixel in self.pixels.chunks_exact_mut(4) {
             pixel[0] = color.0;
             pixel[1] = color.1;
@@ -184,12 +200,16 @@ impl RenderedImage {
         }
     }
 
+    /// Draws filled circle.
     fn draw_filled_circle(&mut self, center_x: i32, center_y: i32, radius: i32, color: Color) {
         let radius = radius.max(1);
         let radius_squared = radius * radius;
 
+        // Iterate through each item in the current collection or range.
         for dy in -radius..=radius {
+            // Iterate through each item in the current collection or range.
             for dx in -radius..=radius {
+                // Branch based on the current runtime condition.
                 if dx * dx + dy * dy <= radius_squared {
                     self.put_pixel(center_x + dx, center_y + dy, color);
                 }
@@ -197,6 +217,7 @@ impl RenderedImage {
         }
     }
 
+    /// Draws line.
     fn draw_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color, thickness: i32) {
         let dx = (x1 - x0).abs();
         let dy = -(y1 - y0).abs();
@@ -205,16 +226,20 @@ impl RenderedImage {
         let mut err = dx + dy;
         let (mut x, mut y) = (x0, y0);
 
+        // Keep looping until a break condition exits the block.
         loop {
             self.stamp(x, y, color, thickness);
+            // Branch based on the current runtime condition.
             if x == x1 && y == y1 {
                 break;
             }
             let doubled = err * 2;
+            // Branch based on the current runtime condition.
             if doubled >= dy {
                 err += dy;
                 x += sx;
             }
+            // Branch based on the current runtime condition.
             if doubled <= dx {
                 err += dx;
                 y += sy;
@@ -222,16 +247,21 @@ impl RenderedImage {
         }
     }
 
+    /// Handles stamp.
     fn stamp(&mut self, x: i32, y: i32, color: Color, thickness: i32) {
         let radius = thickness.saturating_sub(1);
+        // Iterate through each item in the current collection or range.
         for dy in -radius..=radius {
+            // Iterate through each item in the current collection or range.
             for dx in -radius..=radius {
                 self.put_pixel(x + dx, y + dy, color);
             }
         }
     }
 
+    /// Handles pixel.
     fn put_pixel(&mut self, x: i32, y: i32, color: Color) {
+        // Branch based on the current runtime condition.
         if x < 0 || y < 0 {
             return;
         }
@@ -244,6 +274,7 @@ impl RenderedImage {
 
         let width = self.width as usize;
         let height = self.height as usize;
+        // Branch based on the current runtime condition.
         if x >= width || y >= height {
             return;
         }
@@ -255,6 +286,7 @@ impl RenderedImage {
         self.pixels[index + 3] = color.3;
     }
 
+    /// Draws image.
     fn draw_image(
         &mut self,
         image: &RenderedImage,
@@ -263,6 +295,7 @@ impl RenderedImage {
         dest_width: i32,
         dest_height: i32,
     ) {
+        // Branch based on the current runtime condition.
         if dest_width <= 0 || dest_height <= 0 || image.width == 0 || image.height == 0 {
             return;
         }
@@ -271,12 +304,15 @@ impl RenderedImage {
         let start_y = dest_y.max(0);
         let end_x = (dest_x + dest_width).min(self.width as i32);
         let end_y = (dest_y + dest_height).min(self.height as i32);
+        // Branch based on the current runtime condition.
         if start_x >= end_x || start_y >= end_y {
             return;
         }
 
+        // Iterate through each item in the current collection or range.
         for y in start_y..end_y {
             let src_y = ((y - dest_y) as u32 * image.height / dest_height as u32) as usize;
+            // Iterate through each item in the current collection or range.
             for x in start_x..end_x {
                 let src_x = ((x - dest_x) as u32 * image.width / dest_width as u32) as usize;
                 let src_index = (src_y * image.width as usize + src_x) * 4;
@@ -286,6 +322,7 @@ impl RenderedImage {
                     image.pixels[src_index + 2],
                     image.pixels[src_index + 3],
                 );
+                // Branch based on the current runtime condition.
                 if src.3 == 0 {
                     continue;
                 }
@@ -295,8 +332,10 @@ impl RenderedImage {
         }
     }
 
+    /// Handles pixel.
     fn blend_pixel(&mut self, x: usize, y: usize, source: Color) {
         let index = (y * self.width as usize + x) * 4;
+        // Branch based on the current runtime condition.
         if source.3 == 255 {
             self.pixels[index] = source.0;
             self.pixels[index + 1] = source.1;
@@ -319,6 +358,7 @@ impl RenderedImage {
 }
 
 impl SceneTransform {
+    /// Creates new.
     fn new(image_width: f32, image_height: f32) -> Self {
         let scale = (image_width / SCREEN_WIDTH as f32).min(image_height / SCREEN_HEIGHT as f32);
         let content_width = SCREEN_WIDTH as f32 * scale;
@@ -333,6 +373,7 @@ impl SceneTransform {
         }
     }
 
+    /// Handles circle.
     fn circle(self, x: f32, y: f32, radius: f32) -> (i32, i32, i32) {
         let center_x = (self.offset_x + x * self.scale).round() as i32;
         let center_y = (self.offset_y + y * self.scale).round() as i32;
@@ -340,12 +381,14 @@ impl SceneTransform {
         (center_x, center_y, scaled_radius.max(1))
     }
 
+    /// Handles point.
     fn point(self, point: Vector2) -> (i32, i32) {
         let x = (self.offset_x + point.x * self.scale).round() as i32;
         let y = (self.offset_y + point.y * self.scale).round() as i32;
         (x, y)
     }
 
+    /// Handles point.
     fn inverse_point(self, x: f32, y: f32) -> Vector2 {
         Vector2::new(
             (x - self.offset_x) / self.scale,
@@ -353,6 +396,7 @@ impl SceneTransform {
         )
     }
 
+    /// Handles rect.
     fn rect(
         self,
         position: Vector2,
@@ -364,6 +408,7 @@ impl SceneTransform {
         let scaled_width = (width * self.scale).round() as i32;
         let scaled_height = (height * self.scale).round() as i32;
 
+        // Branch based on the current runtime condition.
         if anchor == SpriteAnchor::Center {
             x -= scaled_width / 2;
             y -= scaled_height / 2;
@@ -372,11 +417,13 @@ impl SceneTransform {
         (x, y, scaled_width.max(1), scaled_height.max(1))
     }
 
+    /// Handles scalar.
     fn scale_scalar(self, value: f32) -> i32 {
         (value * self.scale).round() as i32
     }
 }
 
+/// Handles size.
 fn raster_size(geometry: TerminalGeometry) -> (u32, u32) {
     let source_width = if geometry.pixel_width > 0 {
         geometry.pixel_width as u32
@@ -397,7 +444,9 @@ fn raster_size(geometry: TerminalGeometry) -> (u32, u32) {
     )
 }
 
+/// Handles to fit.
 fn scale_to_fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u32, u32) {
+    // Branch based on the current runtime condition.
     if width == 0 || height == 0 {
         return (SCREEN_WIDTH, SCREEN_HEIGHT);
     }
@@ -420,6 +469,7 @@ mod tests {
         vector::Vector2,
     };
 
+    /// Handles pixel.
     fn sample_pixel(image: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
         let index = ((y * width + x) * 4) as usize;
         [
@@ -430,6 +480,7 @@ mod tests {
         ]
     }
 
+    /// Handles renderer.
     fn screen_renderer() -> Renderer {
         Renderer::new(TerminalGeometry {
             cols: 10,
@@ -440,6 +491,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles render paints yellow pixels.
     fn pacman_render_paints_yellow_pixels() {
         let mut renderer = screen_renderer();
         let frame = FrameData {
@@ -460,6 +512,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles uses the logical screen size as a minimum.
     fn renderer_uses_the_logical_screen_size_as_a_minimum() {
         let renderer = Renderer::new(TerminalGeometry {
             cols: 10,
@@ -473,6 +526,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles transform centers the logical screen.
     fn scene_transform_centers_the_logical_screen() {
         let transform = SceneTransform::new(SCREEN_WIDTH as f32 * 2.0, SCREEN_HEIGHT as f32 * 2.0);
         let (x, y, radius) = transform.circle(0.0, 0.0, 10.0);
@@ -483,6 +537,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles render paints white pixels.
     fn line_render_paints_white_pixels() {
         let mut renderer = screen_renderer();
         let frame = FrameData {
@@ -504,6 +559,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles image resize and clear reset the buffer.
     fn rendered_image_resize_and_clear_reset_the_buffer() {
         let mut image = RenderedImage::new_blank(2, 2);
         image.clear(super::Color(1, 2, 3, 4));
@@ -515,6 +571,7 @@ mod tests {
     }
 
     #[test]
+    /// Draws image blends alpha and ignores transparent pixels.
     fn draw_image_blends_alpha_and_ignores_transparent_pixels() {
         let mut target = RenderedImage::new_blank(2, 1);
         target.clear(super::Color(10, 20, 30, 255));
@@ -537,6 +594,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles position returns none when terminal has no cells.
     fn scene_position_returns_none_when_terminal_has_no_cells() {
         let renderer = screen_renderer();
         let scene = renderer.scene_position_for_terminal_cell(
@@ -554,6 +612,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles to fit honours minimum and maximum bounds.
     fn scale_to_fit_honours_minimum_and_maximum_bounds() {
         assert_eq!(
             scale_to_fit(0, 0, SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2),
@@ -571,6 +630,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles rect offsets by half the scaled size.
     fn centered_rect_offsets_by_half_the_scaled_size() {
         let transform = SceneTransform::new(SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32);
         let (x, y, width, height) = transform.rect(

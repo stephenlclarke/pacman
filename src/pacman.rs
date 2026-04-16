@@ -1,3 +1,5 @@
+//! Implements Pac-Man movement, collision bounds, and frame-stepped arcade motion.
+
 use crate::{
     actors::EntityKind,
     arcade::{MovePatternState, ORIGINAL_FRAME_TIME, move_patterns},
@@ -20,11 +22,14 @@ pub enum Direction {
 }
 
 impl Direction {
+    /// Handles cardinals.
     pub const fn cardinals() -> [Self; 4] {
         [Self::Up, Self::Down, Self::Left, Self::Right]
     }
 
+    /// Handles vector.
     pub fn vector(self) -> Vector2 {
+        // Select the next behavior based on the current state.
         match self {
             Self::Stop => Vector2::default(),
             Self::Up => Vector2::new(0.0, -1.0),
@@ -34,7 +39,9 @@ impl Direction {
         }
     }
 
+    /// Handles opposite.
     pub fn opposite(self) -> Self {
+        // Select the next behavior based on the current state.
         match self {
             Self::Stop => Self::Stop,
             Self::Up => Self::Down,
@@ -44,7 +51,9 @@ impl Direction {
         }
     }
 
+    /// Handles index.
     pub fn neighbor_index(self) -> Option<usize> {
+        // Select the next behavior based on the current state.
         match self {
             Self::Up => Some(0),
             Self::Down => Some(1),
@@ -77,6 +86,7 @@ pub struct NodePacman {
 }
 
 impl NodePacman {
+    /// Creates new.
     pub fn new(start_node: NodeId, nodes: &NodeGroup) -> Self {
         let mut pacman = Self {
             position: nodes.position(start_node),
@@ -101,6 +111,7 @@ impl NodePacman {
         pacman
     }
 
+    /// Configures start.
     pub fn configure_start(
         &mut self,
         start_node: NodeId,
@@ -116,6 +127,7 @@ impl NodePacman {
         self.reset(nodes);
     }
 
+    /// Resets reset.
     pub fn reset(&mut self, nodes: &NodeGroup) {
         self.node = self.start_node;
         self.target = self.start_node;
@@ -128,38 +140,47 @@ impl NodePacman {
         self.alive = true;
         self.set_position(nodes);
 
+        // Branch based on the current runtime condition.
         if let Some(direction) = self.start_between {
             self.set_between_nodes(direction, nodes);
             self.direction = direction;
         }
 
+        // Branch based on the current runtime condition.
         if let Some(position) = self.start_position_override {
             self.position = position;
         }
     }
 
+    /// Handles die.
     pub fn die(&mut self) {
         self.alive = false;
         self.direction = Direction::Stop;
     }
 
+    /// Hides hide.
     pub fn hide(&mut self) {
         self.visible = false;
     }
 
+    /// Shows show.
     pub fn show(&mut self) {
         self.visible = true;
     }
 
+    /// Handles visible.
     pub fn visible(&self) -> bool {
         self.visible
     }
 
+    /// Handles alive.
     pub fn alive(&self) -> bool {
         self.alive
     }
 
+    /// Updates update.
     pub fn update(&mut self, dt: f32, requested_direction: Direction, nodes: &NodeGroup) {
+        // Branch based on the current runtime condition.
         if !self.alive {
             return;
         }
@@ -168,49 +189,60 @@ impl NodePacman {
         self.frame_accumulator += dt;
         let steps = (self.frame_accumulator / ORIGINAL_FRAME_TIME) as usize;
         self.frame_accumulator -= steps as f32 * ORIGINAL_FRAME_TIME;
+        // Iterate through each item in the current collection or range.
         for _ in 0..steps {
+            // Branch based on the current runtime condition.
             if self.advance_move_pattern() {
                 self.update_reversible(requested_direction, nodes);
             }
         }
     }
 
+    /// Handles position.
     pub fn position(&self) -> Vector2 {
         self.position
     }
 
+    /// Handles direction.
     pub fn direction(&self) -> Direction {
         self.direction
     }
 
+    /// Handles node.
     pub fn current_node(&self) -> NodeId {
         self.node
     }
 
+    /// Handles target.
     pub fn target(&self) -> NodeId {
         self.target
     }
 
+    /// Handles radius.
     pub fn collide_radius(&self) -> f32 {
         self.collide_radius
     }
 
+    /// Configures level.
     pub fn configure_level(&mut self, level: u32) {
         let patterns = move_patterns(level);
         self.normal_move_pattern = MovePatternState::new(patterns.pacman_normal);
         self.frightened_move_pattern = MovePatternState::new(patterns.pacman_frightened);
     }
 
+    /// Sets frightened.
     pub fn set_frightened(&mut self, frightened: bool) {
         self.frightened = frightened;
     }
 
+    /// Handles check.
     pub fn collide_check(&self, other_position: Vector2, other_collide_radius: f32) -> bool {
         let distance = self.position - other_position;
         let collide_radius = self.collide_radius + other_collide_radius;
         distance.magnitude_squared() <= collide_radius * collide_radius
     }
 
+    /// Handles renderable.
     pub fn renderable(&self) -> Circle {
         Circle {
             center: self.position,
@@ -219,6 +251,7 @@ impl NodePacman {
         }
     }
 
+    /// Handles to node.
     pub fn teleport_to_node(&mut self, node: NodeId, nodes: &NodeGroup) {
         self.node = node;
         self.target = node;
@@ -226,21 +259,26 @@ impl NodePacman {
         self.set_position(nodes);
     }
 
+    /// Updates reversible.
     fn update_reversible(&mut self, requested_direction: Direction, nodes: &NodeGroup) {
         self.position += self.direction.vector() * ARCADE_PIXEL_STEP;
 
+        // Branch based on the current runtime condition.
         if self.try_preturn(requested_direction, nodes) {
             return;
         }
 
+        // Branch based on the current runtime condition.
         if self.overshot_target(nodes) {
             self.enter_target_node(nodes);
             self.target = self.get_new_target(requested_direction, nodes);
+            // Branch based on the current runtime condition.
             if self.target != self.node {
                 self.direction = requested_direction;
             } else {
                 self.target = self.get_new_target(self.direction, nodes);
             }
+            // Branch based on the current runtime condition.
             if self.target == self.node {
                 self.direction = Direction::Stop;
             }
@@ -252,7 +290,9 @@ impl NodePacman {
         }
     }
 
+    /// Handles preturn.
     fn try_preturn(&mut self, requested_direction: Direction, nodes: &NodeGroup) -> bool {
+        // Branch based on the current runtime condition.
         if self.direction == Direction::Stop
             || requested_direction == Direction::Stop
             || requested_direction == self.direction.opposite()
@@ -262,6 +302,7 @@ impl NodePacman {
         }
 
         let target_position = nodes.position(self.target);
+        // Branch based on the current runtime condition.
         if (self.position - target_position).magnitude() > PRETURN_DISTANCE {
             return false;
         }
@@ -273,15 +314,19 @@ impl NodePacman {
         true
     }
 
+    /// Handles target node.
     fn enter_target_node(&mut self, nodes: &NodeGroup) {
         self.node = self.target;
+        // Branch based on the current runtime condition.
         if let Some(portal) = nodes.portal(self.node) {
             self.node = portal;
         }
     }
 
+    /// Sets between nodes.
     fn set_between_nodes(&mut self, direction: Direction, nodes: &NodeGroup) {
         self.target = self.get_new_target(direction, nodes);
+        // Branch based on the current runtime condition.
         if self.target != self.node {
             self.position = (nodes.position(self.node) + nodes.position(self.target)) * 0.5;
         } else {
@@ -289,15 +334,19 @@ impl NodePacman {
         }
     }
 
+    /// Sets position.
     fn set_position(&mut self, nodes: &NodeGroup) {
         self.position = nodes.position(self.node);
     }
 
+    /// Handles direction.
     fn valid_direction(&self, direction: Direction, nodes: &NodeGroup) -> bool {
         direction != Direction::Stop && nodes.can_travel(self.node, direction, EntityKind::Pacman)
     }
 
+    /// Gets new target.
     fn get_new_target(&self, direction: Direction, nodes: &NodeGroup) -> NodeId {
+        // Branch based on the current runtime condition.
         if self.valid_direction(direction, nodes) {
             nodes.neighbor(self.node, direction).unwrap_or(self.node)
         } else {
@@ -305,18 +354,22 @@ impl NodePacman {
         }
     }
 
+    /// Handles target.
     fn overshot_target(&self, nodes: &NodeGroup) -> bool {
         let node_to_target = nodes.position(self.target) - nodes.position(self.node);
         let node_to_self = self.position - nodes.position(self.node);
         node_to_self.magnitude_squared() >= node_to_target.magnitude_squared()
     }
 
+    /// Handles direction.
     fn reverse_direction(&mut self) {
         self.direction = self.direction.opposite();
         std::mem::swap(&mut self.node, &mut self.target);
     }
 
+    /// Advances move pattern.
     fn advance_move_pattern(&mut self) -> bool {
+        // Branch based on the current runtime condition.
         if self.frightened {
             self.frightened_move_pattern.advance()
         } else {
@@ -324,7 +377,9 @@ impl NodePacman {
         }
     }
 
+    /// Handles direction.
     fn prime_direction(&mut self, requested_direction: Direction, nodes: &NodeGroup) {
+        // Branch based on the current runtime condition.
         if self.target != self.node {
             return;
         }
@@ -335,6 +390,7 @@ impl NodePacman {
             self.direction
         };
         let target = self.get_new_target(direction, nodes);
+        // Branch based on the current runtime condition.
         if target != self.node {
             self.target = target;
             self.direction = direction;
@@ -350,6 +406,7 @@ mod tests {
     };
 
     #[test]
+    /// Handles nodes teleport to their pair when reached.
     fn portal_nodes_teleport_to_their_pair_when_reached() {
         let mut nodes = NodeGroup::pacman_maze();
         nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
@@ -362,8 +419,10 @@ mod tests {
         let mut pacman = NodePacman::new(left_portal, &nodes);
 
         pacman.update(0.0, Direction::Left, &nodes);
+        // Iterate through each item in the current collection or range.
         for _ in 0..192 {
             pacman.update(ORIGINAL_FRAME_TIME, Direction::Left, &nodes);
+            // Branch based on the current runtime condition.
             if pacman.current_node() == right_portal {
                 break;
             }
@@ -373,6 +432,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles reset places pacman between nodes.
     fn configured_reset_places_pacman_between_nodes() {
         let nodes = NodeGroup::pacman_maze();
         let start_node = nodes
@@ -392,6 +452,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles turn is taken at the next intersection.
     fn queued_turn_is_taken_at_the_next_intersection() {
         let nodes = NodeGroup::pacman_maze();
         let start_node = nodes
@@ -412,8 +473,10 @@ mod tests {
             None,
             &nodes,
         );
+        // Iterate through each item in the current collection or range.
         for _ in 0..64 {
             pacman.update(ORIGINAL_FRAME_TIME, Direction::Up, &nodes);
+            // Branch based on the current runtime condition.
             if pacman.current_node() == intersection {
                 break;
             }
@@ -426,6 +489,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles requested turn replaces the previous queue.
     fn latest_requested_turn_replaces_the_previous_queue() {
         let nodes = NodeGroup::pacman_maze();
         let start_node = nodes
@@ -446,8 +510,10 @@ mod tests {
             None,
             &nodes,
         );
+        // Iterate through each item in the current collection or range.
         for _ in 0..64 {
             pacman.update(ORIGINAL_FRAME_TIME, Direction::Left, &nodes);
+            // Branch based on the current runtime condition.
             if pacman.current_node() == intersection {
                 break;
             }
@@ -460,6 +526,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles restrictions block pacman movement.
     fn access_restrictions_block_pacman_movement() {
         let mut nodes = NodeGroup::pacman_maze();
         let home = nodes.create_home_nodes(11.5, 14.0);

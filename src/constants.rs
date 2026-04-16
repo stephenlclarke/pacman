@@ -1,3 +1,5 @@
+//! Collects the shared colors, geometry, and interaction constants that keep rendering and gameplay in sync.
+
 pub const TILE_WIDTH: u32 = 16;
 pub const TILE_HEIGHT: u32 = 16;
 pub const NROWS: u32 = 36;

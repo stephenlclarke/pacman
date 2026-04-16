@@ -1,3 +1,5 @@
+//! Provides a reusable pause controller for player pauses and scripted timed pauses.
+
 #[derive(Clone, Debug)]
 pub struct PauseController<T> {
     paused: bool,
@@ -7,6 +9,7 @@ pub struct PauseController<T> {
 }
 
 impl<T: Copy> PauseController<T> {
+    /// Creates new.
     pub fn new(paused: bool) -> Self {
         Self {
             paused,
@@ -16,14 +19,17 @@ impl<T: Copy> PauseController<T> {
         }
     }
 
+    /// Handles paused.
     pub fn paused(&self) -> bool {
         self.paused
     }
 
+    /// Handles timed.
     pub fn is_timed(&self) -> bool {
         self.pause_time.is_some()
     }
 
+    /// Toggles toggle.
     pub fn toggle(&mut self) -> bool {
         self.timer = 0.0;
         self.pause_time = None;
@@ -32,6 +38,7 @@ impl<T: Copy> PauseController<T> {
         self.paused
     }
 
+    /// Sets paused.
     pub fn set_paused(&mut self, paused: bool) {
         self.paused = paused;
         self.timer = 0.0;
@@ -39,6 +46,7 @@ impl<T: Copy> PauseController<T> {
         self.after_pause = None;
     }
 
+    /// Starts timed pause.
     pub fn start_timed_pause(&mut self, pause_time: f32, after_pause: T) {
         self.paused = true;
         self.timer = 0.0;
@@ -46,10 +54,12 @@ impl<T: Copy> PauseController<T> {
         self.after_pause = Some(after_pause);
     }
 
+    /// Updates update.
     pub fn update(&mut self, dt: f32) -> Option<T> {
         let pause_time = self.pause_time?;
 
         self.timer += dt;
+        // Branch based on the current runtime condition.
         if self.timer < pause_time {
             return None;
         }
@@ -71,6 +81,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles pause flips the state.
     fn player_pause_flips_the_state() {
         let mut pause = PauseController::<Action>::new(true);
 
@@ -79,6 +90,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles pause returns its followup action.
     fn timed_pause_returns_its_followup_action() {
         let mut pause = PauseController::new(false);
         pause.start_timed_pause(1.0, Action::Resume);
@@ -89,6 +101,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles pause state is visible to callers.
     fn timed_pause_state_is_visible_to_callers() {
         let mut pause = PauseController::new(false);
         assert!(!pause.is_timed());

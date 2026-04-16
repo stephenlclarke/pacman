@@ -1,3 +1,5 @@
+//! Generates an animated GIF of the title and attract sequence for README documentation.
+
 use std::{fs::File, path::PathBuf};
 
 use anyhow::{Context, Result};
@@ -16,12 +18,14 @@ const ATTRACT_CYCLE_SECONDS: f32 = 6.0 + 8.5 + 7.5;
 const RETURN_TO_TITLE_SECONDS: f32 = 1.0;
 const READY_SECONDS: f32 = 1.5;
 
+/// Handles main.
 fn main() -> Result<()> {
     let output = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("docs/start-sequence.gif"));
 
+    // Branch based on the current runtime condition.
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory for {}", output.display()))?;
@@ -84,6 +88,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Advances for.
 fn advance_for(
     encoder: &mut Encoder<File>,
     renderer: &mut Renderer,
@@ -92,6 +97,7 @@ fn advance_for(
     input: UpdateInput,
 ) -> Result<()> {
     let mut remaining = duration;
+    // Continue processing while the guard condition remains true.
     while remaining > 0.0 {
         game.update_with_input(FRAME_DT, input.clone());
         capture_frame(encoder, renderer, game, FRAME_DELAY_CS)?;
@@ -100,6 +106,7 @@ fn advance_for(
     Ok(())
 }
 
+/// Handles frame.
 fn capture_frame(
     encoder: &mut Encoder<File>,
     renderer: &mut Renderer,

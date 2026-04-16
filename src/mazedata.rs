@@ -1,3 +1,5 @@
+//! Loads the embedded arcade maze metadata and exposes the runtime maze specification.
+
 use crate::{actors::GhostKind, pacman::Direction};
 
 type TilePosition = (f32, f32);
@@ -25,34 +27,42 @@ pub struct MazeSpec {
 }
 
 impl MazeSpec {
+    /// Handles arcade.
     pub fn arcade() -> Self {
         arcade_maze()
     }
 
+    /// Handles offset.
     pub fn add_offset(self, x: f32, y: f32) -> (f32, f32) {
         (x + self.home_offset.0, y + self.home_offset.1)
     }
 
+    /// Handles start.
     pub fn blinky_start(self) -> (f32, f32) {
         self.add_offset(2.0, 0.0)
     }
 
+    /// Handles start.
     pub fn pinky_start(self) -> (f32, f32) {
         self.add_offset(2.0, 3.0)
     }
 
+    /// Handles start.
     pub fn inky_start(self) -> (f32, f32) {
         self.add_offset(0.0, 3.0)
     }
 
+    /// Handles start.
     pub fn clyde_start(self) -> (f32, f32) {
         self.add_offset(4.0, 3.0)
     }
 
+    /// Handles node.
     pub fn spawn_node(self) -> (f32, f32) {
         self.add_offset(2.0, 3.0)
     }
 
+    /// Denies ghost access positions.
     pub fn deny_ghost_access_positions(self) -> [(Direction, (f32, f32)); 2] {
         [
             (Direction::Left, self.add_offset(2.0, 3.0)),
@@ -60,19 +70,23 @@ impl MazeSpec {
         ]
     }
 
+    /// Handles start restriction.
     pub fn inky_start_restriction(self) -> (Direction, (f32, f32), GhostKind) {
         (Direction::Right, self.inky_start(), GhostKind::Inky)
     }
 
+    /// Handles start restriction.
     pub fn pinky_start_restriction(self) -> (Direction, (f32, f32), GhostKind) {
         (Direction::Up, self.pinky_start(), GhostKind::Pinky)
     }
 
+    /// Handles start restriction.
     pub fn clyde_start_restriction(self) -> (Direction, (f32, f32), GhostKind) {
         (Direction::Left, self.clyde_start(), GhostKind::Clyde)
     }
 }
 
+/// Handles maze.
 fn arcade_maze() -> MazeSpec {
     let metadata = arcade_maze_metadata();
     MazeSpec {
@@ -110,10 +124,12 @@ struct MazeMetadata {
     ghost_deny_up: [TilePosition; 4],
 }
 
+/// Handles maze metadata.
 fn arcade_maze_metadata() -> MazeMetadata {
     parse_maze_metadata(ARCADE_MAZE_METADATA)
 }
 
+/// Parses maze metadata.
 fn parse_maze_metadata(text: &str) -> MazeMetadata {
     let mut portal_pair = None;
     let mut home_offset = None;
@@ -129,10 +145,12 @@ fn parse_maze_metadata(text: &str) -> MazeMetadata {
     let mut fruit_start_pixels = None;
     let mut ghost_deny_up = None;
 
+    // Iterate through each item in the current collection or range.
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let (key, value) = line
             .split_once('=')
             .expect("maze metadata lines should use key=value");
+        // Select the next behavior based on the current state.
         match key {
             "portal_pair" => portal_pair = Some(parse_portal_pair(value)),
             "home_offset" => home_offset = Some(parse_position(value)),
@@ -176,6 +194,7 @@ fn parse_maze_metadata(text: &str) -> MazeMetadata {
     }
 }
 
+/// Parses portal pair.
 fn parse_portal_pair(value: &str) -> PortalPair {
     let (left, right) = value
         .split_once('|')
@@ -183,6 +202,7 @@ fn parse_portal_pair(value: &str) -> PortalPair {
     (parse_position(left), parse_position(right))
 }
 
+/// Parses position list.
 fn parse_position_list(value: &str) -> [TilePosition; 4] {
     value
         .split(';')
@@ -192,6 +212,7 @@ fn parse_position_list(value: &str) -> [TilePosition; 4] {
         .expect("maze metadata should provide four ghost deny-up positions")
 }
 
+/// Parses position.
 fn parse_position(value: &str) -> TilePosition {
     let (x, y) = value
         .split_once(',')
@@ -207,6 +228,7 @@ mod tests {
     use super::{MazeSpec, arcade_maze_metadata};
 
     #[test]
+    /// Handles maze spec uses the embedded layout.
     fn arcade_maze_spec_uses_the_embedded_layout() {
         let maze = MazeSpec::arcade();
 
@@ -215,6 +237,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles arcade metadata matches expected positions.
     fn extracted_arcade_metadata_matches_expected_positions() {
         let metadata = arcade_maze_metadata();
 

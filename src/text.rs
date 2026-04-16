@@ -1,3 +1,5 @@
+//! Renders arcade-styled text and manages dynamic status and score labels.
+
 use std::{
     io::Cursor,
     sync::{Arc, OnceLock},
@@ -56,6 +58,7 @@ pub struct TextGroup {
 }
 
 impl TextGroup {
+    /// Creates new.
     pub fn new() -> Self {
         let size = TILE_HEIGHT as f32;
         let mut group = Self {
@@ -100,15 +103,19 @@ impl TextGroup {
         group
     }
 
+    /// Updates update.
     pub fn update(&mut self, dt: f32) {
+        // Iterate through each item in the current collection or range.
         for text in &mut self.transient {
             text.update(dt);
         }
         self.transient.retain(|text| !text.destroyed());
     }
 
+    /// Shows status.
     pub fn show_status(&mut self, status: StatusText) {
         self.hide_status();
+        // Select the next behavior based on the current state.
         match status {
             StatusText::Ready => self.ready.visible = true,
             StatusText::Paused => self.paused.visible = true,
@@ -116,26 +123,32 @@ impl TextGroup {
         }
     }
 
+    /// Hides status.
     pub fn hide_status(&mut self) {
         self.ready.visible = false;
         self.paused.visible = false;
         self.game_over.visible = false;
     }
 
+    /// Updates score.
     pub fn update_score(&mut self, score: u32) {
         self.score_value.set_text(format!("{score:08}"));
     }
 
+    /// Updates level.
     pub fn update_level(&mut self, level: u32) {
         self.level_value.set_text(format!("{level:03}"));
     }
 
+    /// Handles popup.
     pub fn add_popup(&mut self, text: impl Into<String>, color: [u8; 4], x: f32, y: f32) {
         self.transient
             .push(TextItem::timed(text.into(), color, x, y, 8.0, 1.0));
     }
 
+    /// Appends renderables.
     pub fn append_renderables(&self, frame: &mut FrameData) {
+        // Iterate through each item in the current collection or range.
         for text in [
             &self.score_value,
             &self.level_value,
@@ -148,6 +161,7 @@ impl TextGroup {
             text.append_renderable(frame);
         }
 
+        // Iterate through each item in the current collection or range.
         for text in &self.transient {
             text.append_renderable(frame);
         }
@@ -155,12 +169,14 @@ impl TextGroup {
 }
 
 impl Default for TextGroup {
+    /// Handles default.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl TextItem {
+    /// Creates new.
     fn new(
         value: impl Into<String>,
         color: [u8; 4],
@@ -183,34 +199,41 @@ impl TextItem {
         }
     }
 
+    /// Handles timed.
     fn timed(value: String, color: [u8; 4], x: f32, y: f32, size: f32, lifespan: f32) -> Self {
         let mut text = Self::new(value, color, x, y, size, true);
         text.lifespan = Some(lifespan);
         text
     }
 
+    /// Sets text.
     fn set_text(&mut self, value: impl Into<String>) {
         self.value = value.into();
         self.image = rasterize_text_image(&self.value, self.color, self.size);
     }
 
+    /// Updates update.
     fn update(&mut self, dt: f32) {
         let Some(lifespan) = self.lifespan else {
             return;
         };
 
         self.timer += dt;
+        // Branch based on the current runtime condition.
         if self.timer >= lifespan {
             self.visible = false;
             self.lifespan = None;
         }
     }
 
+    /// Handles destroyed.
     fn destroyed(&self) -> bool {
         !self.visible && self.lifespan.is_none() && self.timer > 0.0
     }
 
+    /// Appends renderable.
     fn append_renderable(&self, frame: &mut FrameData) {
+        // Branch based on the current runtime condition.
         if !self.visible {
             return;
         }
@@ -223,6 +246,7 @@ impl TextItem {
     }
 }
 
+/// Handles text image.
 pub fn rasterize_text_image(text: &str, color: [u8; 4], size: f32) -> Arc<RenderedImage> {
     let font = shared_font();
     let glyphs = text
@@ -234,6 +258,7 @@ pub fn rasterize_text_image(text: &str, color: [u8; 4], size: f32) -> Arc<Render
     let height = GLYPH_SIZE * scale;
     let mut pixels = vec![0; width as usize * height as usize * 4];
 
+    // Iterate through each item in the current collection or range.
     for (glyph_index, glyph) in glyphs.iter().enumerate() {
         blit_tinted_scaled(
             &mut pixels,
@@ -252,12 +277,14 @@ pub fn rasterize_text_image(text: &str, color: [u8; 4], size: f32) -> Arc<Render
     })
 }
 
+/// Handles font.
 fn shared_font() -> &'static ArcadeFont {
     static FONT: OnceLock<ArcadeFont> = OnceLock::new();
     FONT.get_or_init(ArcadeFont::load)
 }
 
 impl ArcadeFont {
+    /// Loads load.
     fn load() -> Self {
         let sheet = decode_png_image(FONT_SHEET_BYTES).expect("embedded font sheet should decode");
         let glyphs = (FONT_FIRST_TILE..=FONT_LAST_TILE)
@@ -277,6 +304,7 @@ impl ArcadeFont {
         Self { glyphs }
     }
 
+    /// Handles for char.
     fn glyph_for_char(&self, ch: char) -> Arc<RenderedImage> {
         let tile_index = tile_index_for_char(ch).unwrap_or(SPACE_TILE);
         let clamped = tile_index.clamp(FONT_FIRST_TILE, FONT_LAST_TILE);
@@ -284,7 +312,9 @@ impl ArcadeFont {
     }
 }
 
+/// Handles index for char.
 fn tile_index_for_char(ch: char) -> Option<u8> {
+    // Select the next behavior based on the current state.
     match ch.to_ascii_uppercase() {
         '0'..='9' | 'A'..='Z' => Some(ch.to_ascii_uppercase() as u8),
         ' ' => Some(SPACE_TILE),
@@ -293,6 +323,7 @@ fn tile_index_for_char(ch: char) -> Option<u8> {
     }
 }
 
+/// Handles tinted scaled.
 fn blit_tinted_scaled(
     target: &mut [u8],
     target_width: u32,
@@ -301,15 +332,20 @@ fn blit_tinted_scaled(
     scale: u32,
     color: [u8; 4],
 ) {
+    // Iterate through each item in the current collection or range.
     for row in 0..glyph.height {
+        // Iterate through each item in the current collection or range.
         for col in 0..glyph.width {
             let src_index = ((row * glyph.width + col) * 4) as usize;
             let alpha = glyph.pixels[src_index + 3];
+            // Branch based on the current runtime condition.
             if alpha == 0 {
                 continue;
             }
 
+            // Iterate through each item in the current collection or range.
             for dy in 0..scale {
+                // Iterate through each item in the current collection or range.
                 for dx in 0..scale {
                     let dst_x = origin_x + col * scale + dx;
                     let dst_y = row * scale + dy;
@@ -324,8 +360,10 @@ fn blit_tinted_scaled(
     }
 }
 
+/// Handles image.
 fn crop_image(image: &RenderedImage, x: u32, y: u32, width: u32, height: u32) -> RenderedImage {
     let mut pixels = vec![0; (width * height * 4) as usize];
+    // Iterate through each item in the current collection or range.
     for row in 0..height {
         let src_start = (((y + row) * image.width + x) * 4) as usize;
         let src_end = src_start + (width * 4) as usize;
@@ -340,6 +378,7 @@ fn crop_image(image: &RenderedImage, x: u32, y: u32, width: u32, height: u32) ->
     }
 }
 
+/// Handles png image.
 fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
     let mut decoder = Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
@@ -386,6 +425,7 @@ mod tests {
     };
 
     #[test]
+    /// Handles group starts with ready visible.
     fn text_group_starts_with_ready_visible() {
         let text = TextGroup::new();
         let mut frame = FrameData::default();
@@ -395,6 +435,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles score rebuilds the score label.
     fn updating_score_rebuilds_the_score_label() {
         let mut text = TextGroup::new();
         text.update_score(1234);
@@ -405,6 +446,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles switches hide the previous label.
     fn status_switches_hide_the_previous_label() {
         let mut text = TextGroup::new();
         text.show_status(StatusText::Paused);
@@ -415,6 +457,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles over text uses the arcade red color.
     fn game_over_text_uses_the_arcade_red_color() {
         let text = TextGroup::new();
 
@@ -422,6 +465,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles exclamation glyph renders visible pixels.
     fn arcade_exclamation_glyph_renders_visible_pixels() {
         let image = rasterize_text_image("!", WHITE, 16.0);
 
