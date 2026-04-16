@@ -28,7 +28,6 @@ pub struct TerminalGeometry {
 }
 
 impl TerminalSession {
-    /// Handles enter.
     pub fn enter(stdout: &mut Stdout) -> Result<Self> {
         enable_raw_mode()?;
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Hide)?;
@@ -49,10 +48,8 @@ impl TerminalSession {
 }
 
 impl Drop for TerminalSession {
-    /// Handles drop.
     fn drop(&mut self) {
         let mut stdout = std::io::stdout();
-        // Branch based on the current runtime condition.
         if self.keyboard_enhancements {
             let _ = execute!(stdout, PopKeyboardEnhancementFlags);
         }
@@ -61,7 +58,6 @@ impl Drop for TerminalSession {
     }
 }
 
-/// Handles geometry.
 pub fn geometry() -> Result<TerminalGeometry> {
     let (cols, rows) = size()?;
     let (pixel_width, pixel_height) = pixel_size();
@@ -75,7 +71,6 @@ pub fn geometry() -> Result<TerminalGeometry> {
 }
 
 #[cfg(unix)]
-/// Handles size.
 fn pixel_size() -> (u16, u16) {
     use std::os::fd::AsRawFd;
 
@@ -89,7 +84,6 @@ fn pixel_size() -> (u16, u16) {
     };
 
     let result = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut winsize) };
-    // Branch based on the current runtime condition.
     if result == 0 {
         (winsize.ws_xpixel, winsize.ws_ypixel)
     } else {
@@ -98,7 +92,6 @@ fn pixel_size() -> (u16, u16) {
 }
 
 #[cfg(not(unix))]
-/// Handles size.
 fn pixel_size() -> (u16, u16) {
     (0, 0)
 }
@@ -108,7 +101,6 @@ mod tests {
     use super::{TerminalGeometry, pixel_size};
 
     #[test]
-    /// Handles size returns a valid pair.
     fn pixel_size_returns_a_valid_pair() {
         let (width, height) = pixel_size();
         let geometry = TerminalGeometry {

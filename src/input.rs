@@ -16,17 +16,14 @@ pub struct MouseCell {
 }
 
 impl MouseCell {
-    /// Creates new.
     fn new(column: u16, row: u16) -> Self {
         Self { column, row }
     }
 
-    /// Handles column.
     pub fn column(self) -> u16 {
         self.column
     }
 
-    /// Handles row.
     pub fn row(self) -> u16 {
         self.row
     }
@@ -40,12 +37,10 @@ pub struct InputState {
 }
 
 impl InputState {
-    /// Handles direction.
     pub fn direction(self) -> Direction {
         self.direction
     }
 
-    /// Handles requested.
     pub fn quit_requested(self) -> bool {
         self.quit
     }
@@ -73,35 +68,29 @@ impl InputController {
 
     /// Polls for.
     pub fn poll_for(&mut self, timeout: Duration) -> Result<()> {
-        // Branch based on the current runtime condition.
         if !event::poll(timeout)? {
             return Ok(());
         }
 
         self.handle_event(event::read()?);
-        // Continue processing while the guard condition remains true.
         while event::poll(Duration::ZERO)? {
             self.handle_event(event::read()?);
         }
         Ok(())
     }
 
-    /// Handles direction.
     pub fn direction(&self) -> Direction {
         self.state.direction()
     }
 
-    /// Handles requested.
     pub fn quit_requested(&self) -> bool {
         self.state.quit_requested()
     }
 
-    /// Handles pause requested.
     pub fn take_pause_requested(&mut self) -> bool {
         std::mem::take(&mut self.pause_requested)
     }
 
-    /// Handles start requested.
     pub fn take_start_requested(&mut self) -> bool {
         std::mem::take(&mut self.start_requested)
     }
@@ -111,19 +100,15 @@ impl InputController {
         self.state.mouse_cell()
     }
 
-    /// Handles mouse click.
     pub fn take_mouse_click(&mut self) -> Option<MouseCell> {
         self.mouse_click.take()
     }
 
-    /// Handles typed chars.
     pub fn take_typed_chars(&mut self) -> Vec<char> {
         std::mem::take(&mut self.typed_chars)
     }
 
-    /// Handles event.
     fn handle_event(&mut self, event: Event) {
-        // Select the next behavior based on the current state.
         match event {
             Event::Key(key_event) => self.handle_key(key_event),
             Event::Mouse(mouse_event) => self.handle_mouse(mouse_event),
@@ -132,11 +117,9 @@ impl InputController {
         }
     }
 
-    /// Handles key.
     fn handle_key(&mut self, key_event: KeyEvent) {
         let is_pressed = matches!(key_event.kind, KeyEventKind::Press);
 
-        // Branch based on the current runtime condition.
         if is_pressed
             && let KeyCode::Char(character) = key_event.code
             && character.is_ascii_alphabetic()
@@ -144,7 +127,6 @@ impl InputController {
             self.typed_chars.push(character.to_ascii_lowercase());
         }
 
-        // Select the next behavior based on the current state.
         match key_event.code {
             KeyCode::Up | KeyCode::Char('w') | KeyCode::Char('W') if is_pressed => {
                 self.state.direction = Direction::Up
@@ -171,12 +153,10 @@ impl InputController {
         }
     }
 
-    /// Handles mouse.
     fn handle_mouse(&mut self, mouse_event: MouseEvent) {
         let mouse_cell = MouseCell::new(mouse_event.column, mouse_event.row);
         self.state.mouse_cell = Some(mouse_cell);
 
-        // Branch based on the current runtime condition.
         if matches!(mouse_event.kind, MouseEventKind::Down(MouseButton::Left)) {
             self.mouse_click = Some(mouse_cell);
         }
@@ -192,7 +172,6 @@ mod tests {
     };
 
     #[test]
-    /// Handles direction press replaces the queued turn.
     fn latest_direction_press_replaces_the_queued_turn() {
         let mut input = InputController::default();
 
@@ -208,13 +187,11 @@ mod tests {
     }
 
     #[test]
-    /// Handles keys means stop.
     fn no_keys_means_stop() {
         assert_eq!(InputState::default().direction(), Direction::Stop);
     }
 
     #[test]
-    /// Handles a direction does not clear the queue.
     fn releasing_a_direction_does_not_clear_the_queue() {
         let mut input = InputController::default();
 
@@ -229,7 +206,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles events do not override the latest press.
     fn repeat_events_do_not_override_the_latest_press() {
         let mut input = InputController::default();
 
@@ -248,7 +224,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles requests a pause toggle.
     fn spacebar_requests_a_pause_toggle() {
         let mut input = InputController::default();
         let mut key_event = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
@@ -260,7 +235,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles requests a game start.
     fn enter_requests_a_game_start() {
         let mut input = InputController::default();
         let mut key_event = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
@@ -272,7 +246,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles mouse down tracks position and click.
     fn left_mouse_down_tracks_position_and_click() {
         let mut input = InputController::default();
         input.handle_mouse(MouseEvent {
@@ -287,7 +260,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles is exposed as a typed character instead of an immediate quit.
     fn q_is_exposed_as_a_typed_character_instead_of_an_immediate_quit() {
         let mut input = InputController::default();
         let mut key_event = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);

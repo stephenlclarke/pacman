@@ -132,7 +132,6 @@ struct Planner<'a> {
 }
 
 impl AutoPilot {
-    /// Handles active.
     pub fn active(&self) -> bool {
         self.active
     }
@@ -156,12 +155,10 @@ impl AutoPilot {
         self.route = None;
     }
 
-    /// Handles route.
     pub fn invalidate_route(&mut self) {
         self.route = None;
     }
 
-    /// Handles direction.
     pub fn choose_direction(
         &mut self,
         nodes: &NodeGroup,
@@ -171,7 +168,6 @@ impl AutoPilot {
         fruit: Option<&Fruit>,
         context: AutoPilotContext,
     ) -> Direction {
-        // Branch based on the current runtime condition.
         if !self.active || pellets.is_empty() {
             self.route = None;
             return Direction::Stop;
@@ -190,7 +186,6 @@ impl AutoPilot {
         let at_decision_point = planner.at_decision_point();
         let emergency_replan = planner.emergency_replan_needed();
 
-        // Branch based on the current runtime condition.
         if let Some(route) = self.route.as_ref()
             && let Some(direction) = planner.cached_direction_for_path(&route.path)
             && !at_decision_point
@@ -199,12 +194,10 @@ impl AutoPilot {
             return direction;
         }
 
-        // Branch based on the current runtime condition.
         if !at_decision_point && !emergency_replan {
             return pacman.direction();
         }
 
-        // Branch based on the current runtime condition.
         if pellets.len() <= ROUTE_COMMIT_PELLET_THRESHOLD
             && let Some(route) = self.route.as_ref()
             && planner.plan_is_safe(&route.path)
@@ -226,7 +219,6 @@ impl AutoPilot {
 }
 
 impl<'a> Planner<'a> {
-    /// Creates new.
     fn new(
         nodes: &'a NodeGroup,
         pacman: &'a NodePacman,
@@ -249,25 +241,21 @@ impl<'a> Planner<'a> {
         }
     }
 
-    /// Handles route.
     fn choose_route(&self) -> Option<RouteChoice> {
         let variants = self.start_variants();
         self.best_choice(&variants, false)
             .or_else(|| self.best_choice(&variants, true))
     }
 
-    /// Handles decision point.
     fn at_decision_point(&self) -> bool {
         self.pacman.direction() == Direction::Stop
             || self.pacman.current_node() == self.pacman.target()
     }
 
-    /// Handles replan needed.
     fn emergency_replan_needed(&self) -> bool {
         self.closest_danger_distance(self.pacman.position()) <= DANGER_BLOCK_DISTANCE
     }
 
-    /// Handles choice.
     fn best_choice(
         &self,
         variants: &[StartVariant],
@@ -279,7 +267,6 @@ impl<'a> Planner<'a> {
             .max_by(|lhs, rhs| lhs.score.total_cmp(&rhs.score))
     }
 
-    /// Handles choice for variant.
     fn best_choice_for_variant(
         &self,
         variant: StartVariant,
@@ -315,7 +302,6 @@ impl<'a> Planner<'a> {
         candidates
     }
 
-    /// Handles target.
     fn evaluate_target(
         &self,
         variant: StartVariant,
@@ -326,7 +312,6 @@ impl<'a> Planner<'a> {
         let path = search.path_to(target)?;
         let route = self.route_segments(variant, &path);
         let route_has_power_pellet = self.route_has_power_pellet(&route);
-        // Branch based on the current runtime condition.
         if self.rejects_unready_power_pellet_route(
             route_has_power_pellet,
             &route,
@@ -338,14 +323,12 @@ impl<'a> Planner<'a> {
         let initial_pacman = self.initial_pacman_for(variant);
 
         let planned_direction = self.route_request(self.nodes, &initial_pacman, &path);
-        // Branch based on the current runtime condition.
         if self.immediate_reverse_rejected(&initial_pacman, planned_direction) {
             return None;
         }
 
         let outcome = self.simulate_path(variant, &path)?;
         let total_pellets_eaten = outcome.normal_pellets + outcome.power_pellets;
-        // Branch based on the current runtime condition.
         if self.pellets.len() <= 3 && total_pellets_eaten == 0 {
             return None;
         }
@@ -353,12 +336,10 @@ impl<'a> Planner<'a> {
         let rewardless_route = self.rewardless_route(&outcome, fruit_bonus);
         let allow_endgame_staging = self.allow_endgame_staging(rewardless_route);
 
-        // Branch based on the current runtime condition.
         if self.rejects_rewardless_route(rewardless_route, allow_endgame_staging) {
             return None;
         }
 
-        // Branch based on the current runtime condition.
         if self.rejects_unproductive_power_pellet_route(
             route_has_power_pellet,
             allow_power_pellets,
@@ -369,7 +350,6 @@ impl<'a> Planner<'a> {
 
         let requested_direction = self.requested_direction_for(variant, planned_direction);
 
-        // Branch based on the current runtime condition.
         if requested_direction == Direction::Stop {
             return None;
         }
@@ -391,7 +371,6 @@ impl<'a> Planner<'a> {
         })
     }
 
-    /// Handles unready power pellet route.
     fn rejects_unready_power_pellet_route(
         &self,
         route_has_power_pellet: bool,
@@ -404,17 +383,14 @@ impl<'a> Planner<'a> {
             && !self.power_pellet_ready(route)
     }
 
-    /// Handles pacman for.
     fn initial_pacman_for(&self, variant: StartVariant) -> NodePacman {
         let mut initial_pacman = self.pacman.clone();
-        // Branch based on the current runtime condition.
         if variant.reverse_now {
             initial_pacman.update(0.0, initial_pacman.direction().opposite(), self.nodes);
         }
         initial_pacman
     }
 
-    /// Handles reverse rejected.
     fn immediate_reverse_rejected(
         &self,
         initial_pacman: &NodePacman,
@@ -424,9 +400,7 @@ impl<'a> Planner<'a> {
             && planned_direction == initial_pacman.direction().opposite()
     }
 
-    /// Handles bonus.
     fn fruit_bonus(&self, outcome: &SimOutcome) -> f32 {
-        // Branch based on the current runtime condition.
         if outcome.fruit_hit {
             self.fruit
                 .map_or(0.0, |fruit| FRUIT_REWARD + fruit.points() as f32)
@@ -435,7 +409,6 @@ impl<'a> Planner<'a> {
         }
     }
 
-    /// Handles route.
     fn rewardless_route(&self, outcome: &SimOutcome, fruit_bonus: f32) -> bool {
         outcome.normal_pellets == 0
             && outcome.power_pellets == 0
@@ -450,7 +423,6 @@ impl<'a> Planner<'a> {
             && self.pellets.len() > 2
     }
 
-    /// Handles rewardless route.
     fn rejects_rewardless_route(
         &self,
         rewardless_route: bool,
@@ -459,7 +431,6 @@ impl<'a> Planner<'a> {
         rewardless_route && !allow_endgame_staging
     }
 
-    /// Handles unproductive power pellet route.
     fn rejects_unproductive_power_pellet_route(
         &self,
         route_has_power_pellet: bool,
@@ -472,13 +443,11 @@ impl<'a> Planner<'a> {
             && outcome.freight_score == 0.0
     }
 
-    /// Handles direction for.
     fn requested_direction_for(
         &self,
         variant: StartVariant,
         planned_direction: Direction,
     ) -> Direction {
-        // Branch based on the current runtime condition.
         if variant.reverse_now {
             self.pacman.direction().opposite()
         } else {
@@ -533,7 +502,6 @@ impl<'a> Planner<'a> {
             - trap_penalty
     }
 
-    /// Handles fallback direction.
     fn safest_fallback_direction(&self) -> Direction {
         self.fallback_candidates()
             .into_iter()
@@ -544,9 +512,7 @@ impl<'a> Planner<'a> {
             .unwrap_or(Direction::Stop)
     }
 
-    /// Handles safety.
     fn immediate_safety(&self, direction: Direction) -> f32 {
-        // Branch based on the current runtime condition.
         if direction == Direction::Stop {
             return 0.0;
         }
@@ -560,19 +526,15 @@ impl<'a> Planner<'a> {
         let mut candidates = Vec::new();
         let decision_node = self.fallback_decision_node();
 
-        // Branch based on the current runtime condition.
         if self.pacman.direction() != Direction::Stop {
             candidates.push(self.pacman.direction().opposite());
         }
 
-        // Iterate through each item in the current collection or range.
         for direction in Direction::cardinals() {
-            // Branch based on the current runtime condition.
             if direction == self.pacman.direction().opposite() {
                 continue;
             }
 
-            // Branch based on the current runtime condition.
             if self
                 .nodes
                 .can_travel(decision_node, direction, crate::actors::EntityKind::Pacman)
@@ -586,7 +548,6 @@ impl<'a> Planner<'a> {
 
     /// Computes decision node.
     fn fallback_decision_node(&self) -> NodeId {
-        // Branch based on the current runtime condition.
         if self.pacman.direction() == Direction::Stop
             || self.pacman.current_node() == self.pacman.target()
         {
@@ -609,7 +570,6 @@ impl<'a> Planner<'a> {
 
     /// Simulates fallback.
     fn simulate_fallback(&self, direction: Direction) -> Option<(f32, f32)> {
-        // Branch based on the current runtime condition.
         if direction == Direction::Stop {
             return None;
         }
@@ -623,7 +583,6 @@ impl<'a> Planner<'a> {
         let mut min_danger_distance = f32::INFINITY;
         let steps = (FALLBACK_LOOKAHEAD / SIMULATION_DT).ceil() as usize;
 
-        // Iterate through each item in the current collection or range.
         for _ in 0..steps {
             pacman.set_frightened(ghosts.has_freight_mode());
             pacman.update(SIMULATION_DT, direction, &nodes);
@@ -640,7 +599,6 @@ impl<'a> Planner<'a> {
                 },
             );
 
-            // Branch based on the current runtime condition.
             if !self.resolve_simulated_ghost_collision(
                 &mut nodes,
                 &pacman,
@@ -664,7 +622,6 @@ impl<'a> Planner<'a> {
     fn start_variants(&self) -> Vec<StartVariant> {
         let mut variants = Vec::with_capacity(2);
         let current_node = self.pacman.current_node();
-        // Branch based on the current runtime condition.
         if self.pacman.direction() == Direction::Stop {
             variants.push(StartVariant {
                 start_node: current_node,
@@ -684,7 +641,6 @@ impl<'a> Planner<'a> {
         variants
     }
 
-    /// Handles paths.
     fn shortest_paths(&self, start: NodeId) -> SearchTree {
         let node_count = self.node_ids.len();
         let mut distances = vec![f32::INFINITY; node_count];
@@ -692,7 +648,6 @@ impl<'a> Planner<'a> {
         let mut visited = vec![false; node_count];
         distances[start] = 0.0;
 
-        // Iterate through each item in the current collection or range.
         for _ in 0..node_count {
             let current = (0..node_count)
                 .filter(|&index| !visited[index] && distances[index].is_finite())
@@ -702,9 +657,7 @@ impl<'a> Planner<'a> {
             };
 
             visited[current] = true;
-            // Iterate through each item in the current collection or range.
             for direction in Direction::cardinals() {
-                // Branch based on the current runtime condition.
                 if !self
                     .nodes
                     .can_travel(current, direction, crate::actors::EntityKind::Pacman)
@@ -721,17 +674,14 @@ impl<'a> Planner<'a> {
                 let candidate = distances[current]
                     + edge_length
                     + self.node_danger_cost(next).min(BLOCKED_ROUTE_PENALTY);
-                // Branch based on the current runtime condition.
                 if candidate < distances[next] {
                     distances[next] = candidate;
                     previous[next] = Some(current);
                 }
             }
 
-            // Branch based on the current runtime condition.
             if let Some(portal) = self.nodes.portal(current) {
                 let candidate = distances[current] + self.node_danger_cost(portal);
-                // Branch based on the current runtime condition.
                 if candidate < distances[portal] {
                     distances[portal] = candidate;
                     previous[portal] = Some(current);
@@ -746,15 +696,12 @@ impl<'a> Planner<'a> {
         }
     }
 
-    /// Handles danger cost.
     fn node_danger_cost(&self, node: NodeId) -> f32 {
         let position = self.nodes.position(node);
         let distance = self.closest_danger_distance(position);
-        // Branch based on the current runtime condition.
         if !distance.is_finite() {
             return 0.0;
         }
-        // Branch based on the current runtime condition.
         if distance < DANGER_BLOCK_DISTANCE {
             return BLOCKED_ROUTE_PENALTY;
         }
@@ -778,7 +725,6 @@ impl<'a> Planner<'a> {
             .fold(f32::INFINITY, f32::min)
     }
 
-    /// Handles normal pellets.
     fn remaining_normal_pellets(&self) -> usize {
         self.pellets
             .iter()
@@ -786,7 +732,6 @@ impl<'a> Planner<'a> {
             .count()
     }
 
-    /// Handles staging bonus.
     fn endgame_staging_bonus(&self, target: NodeId) -> f32 {
         let target_position = self.nodes.position(target);
         let closest_pellet_distance = self
@@ -798,7 +743,6 @@ impl<'a> Planner<'a> {
 
         let mut bonus =
             ENDGAME_STAGING_BONUS - pellet_distance_tiles * ENDGAME_STAGING_PROXIMITY_SCALE;
-        // Branch based on the current runtime condition.
         if self.pellets.len() <= 8
             && self.closest_danger_distance(self.pacman.position()) <= TILE_WIDTH as f32 * 8.0
             && self.nodes.portal(target).is_some()
@@ -809,7 +753,6 @@ impl<'a> Planner<'a> {
         bonus
     }
 
-    /// Handles bonus.
     fn cleanup_bonus(&self, route: &[(Vector2, Vector2)], target: NodeId) -> f32 {
         let target_position = self.nodes.position(target);
         let cleanup_radius = if self.pellets.len() <= 12 {
@@ -830,21 +773,17 @@ impl<'a> Planner<'a> {
         let mut nearby_total = 0usize;
         let mut nearby_cleared = 0usize;
 
-        // Iterate through each item in the current collection or range.
         for pellet in self.pellets.iter() {
-            // Branch based on the current runtime condition.
             if (pellet.position() - target_position).magnitude() > cleanup_radius {
                 continue;
             }
 
             nearby_total += 1;
-            // Branch based on the current runtime condition.
             if self.route_contains_position(route, pellet.position()) {
                 nearby_cleared += 1;
             }
         }
 
-        // Branch based on the current runtime condition.
         if nearby_total == 0 || nearby_cleared == 0 {
             return 0.0;
         }
@@ -852,7 +791,6 @@ impl<'a> Planner<'a> {
         let remaining = nearby_total - nearby_cleared;
         let completion = nearby_cleared as f32 / nearby_total as f32;
         let mut bonus = completion * completion * nearby_cleared as f32 * CLEANUP_PROGRESS_SCALE;
-        // Branch based on the current runtime condition.
         if remaining == 0 {
             bonus += complete_bonus;
         } else if remaining <= 2 {
@@ -896,16 +834,13 @@ impl<'a> Planner<'a> {
             .fold(0.0, f32::max)
     }
 
-    /// Handles summary.
     fn roundup_summary(&self, position: Vector2) -> RoundupSummary {
         let mut summary = RoundupSummary::default();
 
-        // Iterate through each item in the current collection or range.
         for ghost in self.ghosts.iter().filter(|ghost| {
             ghost.visible && matches!(ghost.mode, GhostMode::Scatter | GhostMode::Chase)
         }) {
             let distance = self.ghost_distance_to(position, *ghost);
-            // Branch based on the current runtime condition.
             if distance > POWER_PELLET_TRIGGER_DISTANCE {
                 continue;
             }
@@ -920,12 +855,10 @@ impl<'a> Planner<'a> {
                 * weight;
         }
 
-        // Branch based on the current runtime condition.
         if summary.nearby < 2 && !summary.emergency {
             summary.value *= 0.35;
         }
 
-        // Branch based on the current runtime condition.
         if summary.preferred > 0 {
             summary.value += summary.preferred as f32 * PREFERRED_FREIGHT_KIND_BONUS;
         }
@@ -933,27 +866,22 @@ impl<'a> Planner<'a> {
         summary
     }
 
-    /// Handles trap penalty.
     fn target_trap_penalty(&self, target: NodeId) -> f32 {
-        // Branch based on the current runtime condition.
         if self.power_pellet_escape_hatch(target) {
             return 0.0;
         }
 
         let exits = self.exit_count(target);
-        // Branch based on the current runtime condition.
         if exits >= 3 {
             return 0.0;
         }
 
         let distance = self.closest_danger_distance(self.nodes.position(target));
-        // Branch based on the current runtime condition.
         if !distance.is_finite() {
             return 0.0;
         }
 
         let tiles = (distance / TILE_WIDTH as f32).max(0.5);
-        // Branch based on the current runtime condition.
         if exits <= 1 {
             TRAP_NODE_PENALTY / tiles
         } else if self.nodes.portal(target).is_none() {
@@ -976,7 +904,6 @@ impl<'a> Planner<'a> {
         })
     }
 
-    /// Handles count.
     fn exit_count(&self, node: NodeId) -> usize {
         Direction::cardinals()
             .into_iter()
@@ -987,7 +914,6 @@ impl<'a> Planner<'a> {
             .count()
     }
 
-    /// Handles pressure.
     fn danger_pressure(&self, position: Vector2) -> f32 {
         self.ghosts
             .iter()
@@ -1001,16 +927,13 @@ impl<'a> Planner<'a> {
             .sum()
     }
 
-    /// Handles distance to.
     fn ghost_distance_to(&self, position: Vector2, ghost: GhostSnapshot) -> f32 {
         let current = (position - ghost.position).magnitude();
         let projected = (position - ghost.projected).magnitude();
         current.min(projected)
     }
 
-    /// Handles weight.
     fn ghost_weight(&self, kind: GhostKind) -> f32 {
-        // Select the next behavior based on the current state.
         match kind {
             GhostKind::Blinky => 1.45,
             GhostKind::Pinky => 1.25,
@@ -1023,14 +946,11 @@ impl<'a> Planner<'a> {
     fn route_segments(&self, variant: StartVariant, path: &[NodeId]) -> Vec<(Vector2, Vector2)> {
         let mut segments = Vec::new();
         let start_position = self.nodes.position(variant.start_node);
-        // Branch based on the current runtime condition.
         if self.pacman.position() != start_position {
             segments.push((self.pacman.position(), start_position));
         }
 
-        // Iterate through each item in the current collection or range.
         for window in path.windows(2) {
-            // Branch based on the current runtime condition.
             if self.nodes.portal(window[0]) == Some(window[1]) {
                 continue;
             }
@@ -1066,32 +986,26 @@ impl<'a> Planner<'a> {
         self.next_path_direction(nodes, path, anchor_index)
     }
 
-    /// Handles direction for path.
     fn cached_direction_for_path(&self, path: &[NodeId]) -> Option<Direction> {
         let direction = self.route_request(self.nodes, self.pacman, path);
         (direction != Direction::Stop).then_some(direction)
     }
 
-    /// Handles is safe.
     fn plan_is_safe(&self, path: &[NodeId]) -> bool {
         self.simulate_committed_path(path).is_some()
     }
 
-    /// Handles path direction.
     fn next_path_direction(
         &self,
         nodes: &NodeGroup,
         path: &[NodeId],
         start_index: usize,
     ) -> Direction {
-        // Iterate through each item in the current collection or range.
         for window in path[start_index..].windows(2) {
-            // Branch based on the current runtime condition.
             if nodes.portal(window[0]) == Some(window[1]) {
                 continue;
             }
 
-            // Branch based on the current runtime condition.
             if let Some(direction) = Direction::cardinals()
                 .into_iter()
                 .find(|&direction| nodes.neighbor(window[0], direction) == Some(window[1]))
@@ -1119,7 +1033,6 @@ impl<'a> Planner<'a> {
     /// Simulates path.
     fn simulate_path(&self, variant: StartVariant, path: &[NodeId]) -> Option<SimOutcome> {
         let mut pacman = self.pacman.clone();
-        // Branch based on the current runtime condition.
         if variant.reverse_now && pacman.direction() != Direction::Stop {
             pacman.update(0.0, pacman.direction().opposite(), self.nodes);
         }
@@ -1151,9 +1064,7 @@ impl<'a> Planner<'a> {
         let mut elapsed = 0.0;
         let _rng_guard = PreserveRng::new();
 
-        // Iterate through each item in the current collection or range.
         for _ in 0..max_steps {
-            // Branch based on the current runtime condition.
             if !self.update_simulated_world(
                 &mut nodes,
                 &pacman,
@@ -1175,14 +1086,12 @@ impl<'a> Planner<'a> {
                         pacman.position(),
                     ));
 
-            // Branch based on the current runtime condition.
             if let Some(completed) =
                 Self::settled_goal_outcome(&mut outcome, reached_goal_at, elapsed)
             {
                 return Some(completed);
             }
 
-            // Branch based on the current runtime condition.
             if Self::advance_if_goal_settling(reached_goal_at, &mut elapsed)
                 == GoalProgress::Reached
             {
@@ -1194,7 +1103,6 @@ impl<'a> Planner<'a> {
             pacman.update(SIMULATION_DT, requested_direction, &nodes);
             elapsed += SIMULATION_DT;
 
-            // Branch based on the current runtime condition.
             if reached_goal_at.is_none() && pacman.current_node() == goal {
                 reached_goal_at = Some(elapsed);
             }
@@ -1242,10 +1150,8 @@ impl<'a> Planner<'a> {
 
     /// Updates simulated fruit.
     fn update_simulated_fruit(&self, fruit: &mut Option<Fruit>) {
-        // Branch based on the current runtime condition.
         if let Some(current_fruit) = fruit {
             current_fruit.update(SIMULATION_DT);
-            // Branch based on the current runtime condition.
             if current_fruit.destroyed() {
                 *fruit = None;
             }
@@ -1260,9 +1166,7 @@ impl<'a> Planner<'a> {
         ghosts: &mut GhostGroup,
         outcome: &mut SimOutcome,
     ) {
-        // Branch based on the current runtime condition.
         if let Some(pellet) = pellets.try_eat(pacman.position(), pacman.collide_radius()) {
-            // Select the next behavior based on the current state.
             match pellet.kind() {
                 PelletKind::Pellet => outcome.normal_pellets += 1,
                 PelletKind::PowerPellet => {
@@ -1280,7 +1184,6 @@ impl<'a> Planner<'a> {
         fruit: &mut Option<Fruit>,
         outcome: &mut SimOutcome,
     ) {
-        // Branch based on the current runtime condition.
         if let Some(current_fruit) = fruit
             && pacman.collide_check(current_fruit.position(), current_fruit.collide_radius())
         {
@@ -1289,14 +1192,12 @@ impl<'a> Planner<'a> {
         }
     }
 
-    /// Handles goal outcome.
     fn settled_goal_outcome(
         outcome: &mut SimOutcome,
         reached_goal_at: Option<f32>,
         elapsed: f32,
     ) -> Option<SimOutcome> {
         let goal_time = reached_goal_at?;
-        // Branch based on the current runtime condition.
         if elapsed < goal_time + SETTLE_TIME {
             return None;
         }
@@ -1307,7 +1208,6 @@ impl<'a> Planner<'a> {
 
     /// Advances if goal settling.
     fn advance_if_goal_settling(reached_goal_at: Option<f32>, elapsed: &mut f32) -> GoalProgress {
-        // Branch based on the current runtime condition.
         if reached_goal_at.is_none() {
             return GoalProgress::Continue;
         }
@@ -1331,14 +1231,11 @@ impl<'a> Planner<'a> {
         let anchor_index = path.iter().position(|&node| node == anchor).unwrap_or(0);
         let anchor_position = self.nodes.position(anchor);
 
-        // Branch based on the current runtime condition.
         if pacman.position() != anchor_position {
             segments.push((pacman.position(), anchor_position));
         }
 
-        // Iterate through each item in the current collection or range.
         for window in path[anchor_index..].windows(2) {
-            // Branch based on the current runtime condition.
             if self.nodes.portal(window[0]) == Some(window[1]) {
                 continue;
             }
@@ -1359,19 +1256,15 @@ impl<'a> Planner<'a> {
         ghosts: &mut GhostGroup,
         outcome: &mut SimOutcome,
     ) -> bool {
-        // Iterate through each item in the current collection or range.
         for kind in GhostKind::ALL {
             let ghost = ghosts.ghost(kind);
-            // Branch based on the current runtime condition.
             if !pacman.collide_check(ghost.position(), ghost.collide_radius()) {
                 continue;
             }
 
-            // Select the next behavior based on the current state.
             match ghost.mode() {
                 GhostMode::Freight => {
                     let points = ghost.points();
-                    // Branch based on the current runtime condition.
                     if matches!(kind, GhostKind::Blinky | GhostKind::Pinky) {
                         outcome.preferred_freight_hits += 1;
                     }
@@ -1404,10 +1297,8 @@ impl<'a> Planner<'a> {
         PACMAN_SPEED * level_spec(self.level).pacman_speed
     }
 
-    /// Handles escape bonus.
     fn tunnel_escape_bonus(&self, path: &[NodeId]) -> f32 {
         let late_endgame = self.pellets.len() <= 8;
-        // Branch based on the current runtime condition.
         if !late_endgame
             && self.closest_danger_distance(self.pacman.position()) > TILE_WIDTH as f32 * 6.0
         {
@@ -1427,7 +1318,6 @@ impl<'a> Planner<'a> {
 }
 
 impl GhostSnapshot {
-    /// Handles ghost.
     fn from_ghost(ghost: &Ghost) -> Self {
         Self {
             kind: ghost.kind(),
@@ -1441,7 +1331,6 @@ impl GhostSnapshot {
 }
 
 impl RoundupSummary {
-    /// Handles triggering.
     fn worth_triggering(self, pacman_danger: f32, pellets_remaining: usize) -> bool {
         self.emergency
             || self.nearby >= 2
@@ -1461,14 +1350,12 @@ struct SearchTree {
 struct PreserveRng(u64);
 
 impl PreserveRng {
-    /// Creates new.
     fn new() -> Self {
         Self(fastrand::get_seed())
     }
 }
 
 impl Drop for PreserveRng {
-    /// Handles drop.
     fn drop(&mut self) {
         fastrand::seed(self.0);
     }
@@ -1477,7 +1364,6 @@ impl Drop for PreserveRng {
 impl SearchTree {
     /// Computes to.
     fn path_to(&self, goal: NodeId) -> Option<Vec<NodeId>> {
-        // Branch based on the current runtime condition.
         if !self
             .distances
             .get(goal)
@@ -1488,7 +1374,6 @@ impl SearchTree {
 
         let mut path = vec![goal];
         let mut current = goal;
-        // Continue processing while the guard condition remains true.
         while current != self.start {
             current = self.previous.get(current).copied().flatten()?;
             path.push(current);
@@ -1498,16 +1383,13 @@ impl SearchTree {
     }
 }
 
-/// Handles contains position.
 fn segment_contains_position(start: Vector2, end: Vector2, position: Vector2) -> bool {
-    // Branch based on the current runtime condition.
     if start.x == end.x && position.x == start.x {
         let min_y = start.y.min(end.y);
         let max_y = start.y.max(end.y);
         return position.y >= min_y && position.y <= max_y;
     }
 
-    // Branch based on the current runtime condition.
     if start.y == end.y && position.y == start.y {
         let min_x = start.x.min(end.x);
         let max_x = start.x.max(end.x);
@@ -1529,7 +1411,6 @@ mod tests {
         pellets::PelletGroup,
     };
 
-    /// Handles nodes.
     fn line_nodes() -> (NodeGroup, usize, usize, usize) {
         let nodes = NodeGroup::from_pacman_layout(
             "
@@ -1549,7 +1430,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles chases reachable freight ghosts.
     fn autopilot_chases_reachable_freight_ghosts() {
         let (nodes, left, center, right) = line_nodes();
         let mut pacman = NodePacman::new(center, &nodes);
@@ -1585,7 +1465,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles prioritizes fruit when it is on the route.
     fn autopilot_prioritizes_fruit_when_it_is_on_the_route() {
         let (nodes, left, center, _) = line_nodes();
         let mut pacman = NodePacman::new(center, &nodes);
@@ -1618,7 +1497,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles delays power pellets while other pellets remain.
     fn autopilot_delays_power_pellets_while_other_pellets_remain() {
         let nodes = NodeGroup::from_pacman_layout(
             "
@@ -1668,7 +1546,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles steers away from nearby dangerous ghosts.
     fn autopilot_steers_away_from_nearby_dangerous_ghosts() {
         let nodes = NodeGroup::from_pacman_layout(
             "
@@ -1720,7 +1597,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles uses portal routes when needed.
     fn autopilot_uses_portal_routes_when_needed() {
         let mut nodes = NodeGroup::from_pacman_layout(
             "

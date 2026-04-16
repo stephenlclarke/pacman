@@ -59,7 +59,6 @@ struct ArcadeRuleTables {
 }
 
 impl MovePatternState {
-    /// Creates new.
     pub fn new(base: u32) -> Self {
         Self {
             base,
@@ -79,13 +78,11 @@ impl MovePatternState {
         move_now
     }
 
-    /// Handles base.
     pub fn base(&self) -> u32 {
         self.base
     }
 }
 
-/// Handles spec.
 pub fn level_spec(level: u32) -> ArcadeLevelSpec {
     let (elroy_one_dots_left, elroy_two_dots_left) = elroy_dot_limits(level);
     let frightened_time = frightened_time_seconds(level);
@@ -110,7 +107,6 @@ pub fn level_spec(level: u32) -> ArcadeLevelSpec {
     }
 }
 
-/// Handles durations.
 pub fn scatter_durations(level: u32) -> [f32; 4] {
     let frames = phase_change_frames(level);
     [
@@ -121,7 +117,6 @@ pub fn scatter_durations(level: u32) -> [f32; 4] {
     ]
 }
 
-/// Handles durations.
 pub fn chase_durations(level: u32) -> [Option<f32>; 4] {
     let frames = phase_change_frames(level);
     [
@@ -132,11 +127,9 @@ pub fn chase_durations(level: u32) -> [Option<f32>; 4] {
     ]
 }
 
-/// Handles personal dot limit.
 pub fn ghost_personal_dot_limit(kind: GhostKind, level: u32) -> usize {
     let group_index = difficulty_entry(level)[2] as usize;
     let group = arcade_rule_tables().personal_dot_groups[group_index];
-    // Select the next behavior based on the current state.
     match kind {
         GhostKind::Pinky => group[0] as usize,
         GhostKind::Inky => group[1] as usize,
@@ -145,9 +138,7 @@ pub fn ghost_personal_dot_limit(kind: GhostKind, level: u32) -> usize {
     }
 }
 
-/// Handles release dot.
 pub fn global_release_dot(kind: GhostKind) -> Option<usize> {
-    // Select the next behavior based on the current state.
     match kind {
         GhostKind::Pinky => Some(usize::from(arcade_rule_tables().global_release_dots[0])),
         GhostKind::Inky => Some(usize::from(arcade_rule_tables().global_release_dots[1])),
@@ -156,33 +147,27 @@ pub fn global_release_dot(kind: GhostKind) -> Option<usize> {
     }
 }
 
-/// Handles timer limit.
 pub fn release_timer_limit(level: u32) -> f32 {
     let frame_index = difficulty_entry(level)[5] as usize;
     f32::from(arcade_rule_tables().release_timer_frames[frame_index]) / ORIGINAL_FPS
 }
 
-/// Handles flash duration.
 pub fn fright_flash_duration(total_time: f32) -> f32 {
     total_time.min((f32::from(FRIGHT_FLASH_START_TICKS) - 1.0) / ARCADE_TIMER_TICKS_PER_SECOND)
 }
 
-/// Handles flash half period seconds.
 pub fn fright_flash_half_period_seconds() -> f32 {
     f32::from(FRIGHT_FLASH_HALF_PERIOD_TICKS) / ARCADE_TIMER_TICKS_PER_SECOND
 }
 
-/// Handles release dots.
 pub fn fruit_release_dots() -> [usize; 2] {
     arcade_rule_tables().fruit_release_dots.map(usize::from)
 }
 
-/// Handles lifespan seconds.
 pub fn fruit_lifespan_seconds() -> f32 {
     isr_delay_seconds(arcade_rule_tables().fruit_reset_timer)
 }
 
-/// Handles patterns.
 pub fn move_patterns(level: u32) -> ArcadeMovePatterns {
     let group = arcade_rule_tables().move_pattern_groups[difficulty_entry(level)[0] as usize];
     ArcadeMovePatterns {
@@ -196,58 +181,48 @@ pub fn move_patterns(level: u32) -> ArcadeMovePatterns {
     }
 }
 
-/// Handles pause seconds.
 pub fn dot_pause_seconds(power_pellet: bool) -> f32 {
     ORIGINAL_FPS.recip() * if power_pellet { 3.0 } else { 1.0 }
 }
 
-/// Handles rule tables.
 fn arcade_rule_tables() -> &'static ArcadeRuleTables {
     static TABLES: OnceLock<ArcadeRuleTables> = OnceLock::new();
     TABLES.get_or_init(|| parse_arcade_rule_tables(ARCADE_RULES))
 }
 
-/// Handles entry.
 fn difficulty_entry(level: u32) -> [u8; 6] {
     arcade_rule_tables().difficulty_entries[level_index(level)]
 }
 
-/// Handles change frames.
 fn phase_change_frames(level: u32) -> [u16; 7] {
     let group_index = difficulty_entry(level)[0] as usize;
     arcade_rule_tables().phase_change_frames[group_index]
 }
 
-/// Handles dot limits.
 fn elroy_dot_limits(level: u32) -> (usize, usize) {
     let group_index = difficulty_entry(level)[3] as usize;
     let [first, second] = arcade_rule_tables().elroy_dot_groups[group_index];
     (usize::from(first), usize::from(second))
 }
 
-/// Handles points.
 fn fruit_points(level: u32) -> u32 {
     arcade_rule_tables().fruit_points[level_index(level)]
 }
 
-/// Handles time seconds.
 fn frightened_time_seconds(level: u32) -> f32 {
     let timer_index = difficulty_entry(level)[4] as usize;
     f32::from(arcade_rule_tables().frightened_timer_ticks[timer_index])
         / ARCADE_TIMER_TICKS_PER_SECOND
 }
 
-/// Handles to seconds.
 fn frames_to_seconds(frames: u16) -> f32 {
     f32::from(frames) / ORIGINAL_FPS
 }
 
-/// Handles speed.
 fn pattern_speed(pattern: u32) -> f32 {
     pattern.count_ones() as f32 / 20.0
 }
 
-/// Handles delay seconds.
 fn isr_delay_seconds(encoded: u8) -> f32 {
     let unit = match encoded >> 6 {
         0 => ORIGINAL_FPS.recip(),
@@ -258,7 +233,6 @@ fn isr_delay_seconds(encoded: u8) -> f32 {
     unit * f32::from(encoded & 0x3f)
 }
 
-/// Handles index.
 fn level_index(level: u32) -> usize {
     level.saturating_sub(1).min(20) as usize
 }
@@ -277,12 +251,10 @@ fn parse_arcade_rule_tables(text: &str) -> ArcadeRuleTables {
     let mut fruit_release_dots = None;
     let mut global_release_dots = None;
 
-    // Iterate through each item in the current collection or range.
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let (key, value) = line
             .split_once('=')
             .expect("arcade rule metadata lines should use key=value");
-        // Select the next behavior based on the current state.
         match key {
             "difficulty_entries" => difficulty_entries = Some(parse_table_6x21(value)),
             "personal_dot_groups" => personal_dot_groups = Some(parse_table_3x4(value)),
@@ -465,7 +437,6 @@ mod tests {
     use crate::actors::GhostKind;
 
     #[test]
-    /// Handles one matches arcade basics.
     fn level_one_matches_arcade_basics() {
         let spec = level_spec(1);
         assert_eq!(spec.fruit_points, 100);
@@ -474,7 +445,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles rules match arcade thresholds.
     fn release_rules_match_arcade_thresholds() {
         assert_eq!(ghost_personal_dot_limit(GhostKind::Pinky, 1), 0);
         assert_eq!(ghost_personal_dot_limit(GhostKind::Inky, 1), 30);
@@ -489,7 +459,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles timers follow the rom table.
     fn frightened_timers_follow_the_rom_table() {
         assert!((level_spec(1).frightened_time - 6.0).abs() < 0.001);
         assert!((level_spec(14).frightened_time - 3.0).abs() < 0.001);
@@ -499,7 +468,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles and chase durations follow rom phase thresholds.
     fn scatter_and_chase_durations_follow_rom_phase_thresholds() {
         let level_one_scatters = scatter_durations(1);
         let level_one_chases = chase_durations(1);
@@ -517,7 +485,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles patterns follow the rom move groups.
     fn move_patterns_follow_the_rom_move_groups() {
         let level_one = move_patterns(1);
         let level_two = move_patterns(2);
@@ -531,7 +498,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles pattern state uses the rom bit cycle.
     fn move_pattern_state_uses_the_rom_bit_cycle() {
         let mut state = MovePatternState::new(0xa000_0001);
 

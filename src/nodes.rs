@@ -37,7 +37,6 @@ struct MazeData {
 }
 
 impl Node {
-    /// Creates new.
     fn new(x: i32, y: i32) -> Self {
         Self {
             position: Vector2::new(x as f32, y as f32),
@@ -63,7 +62,6 @@ impl Node {
         self.access[index].insert(entity);
     }
 
-    /// Handles access.
     fn can_access(&self, direction: Direction, entity: EntityKind) -> bool {
         let Some(index) = direction.neighbor_index() else {
             return false;
@@ -75,12 +73,10 @@ impl Node {
 
 impl NodeGroup {
     #[cfg(test)]
-    /// Handles maze.
     pub fn pacman_maze() -> Self {
         Self::from_pacman_layout(MAZE_ONE)
     }
 
-    /// Handles pacman layout.
     pub fn from_pacman_layout(text: &str) -> Self {
         Self::from_text(text, &['+', 'P', 'n'], &['.', '-', '|', 'p'])
     }
@@ -90,7 +86,6 @@ impl NodeGroup {
         0
     }
 
-    /// Handles neighbor.
     pub fn neighbor(&self, node_id: NodeId, direction: Direction) -> Option<NodeId> {
         let index = direction.neighbor_index()?;
         self.nodes
@@ -98,30 +93,25 @@ impl NodeGroup {
             .and_then(|node| node.neighbors[index])
     }
 
-    /// Handles travel.
     pub fn can_travel(&self, node_id: NodeId, direction: Direction, entity: EntityKind) -> bool {
         self.nodes
             .get(node_id)
             .is_some_and(|node| node.can_access(direction, entity))
     }
 
-    /// Handles portal.
     pub fn portal(&self, node_id: NodeId) -> Option<NodeId> {
         self.nodes.get(node_id).and_then(|node| node.portal)
     }
 
-    /// Handles position.
     pub fn position(&self, node_id: NodeId) -> Vector2 {
         self.nodes[node_id].position
     }
 
     #[cfg(test)]
-    /// Handles count.
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
 
-    /// Handles ids.
     pub fn node_ids(&self) -> impl Iterator<Item = NodeId> + '_ {
         0..self.nodes.len()
     }
@@ -151,7 +141,6 @@ impl NodeGroup {
         self.nodes[node2].portal = Some(node1);
     }
 
-    /// Handles home nodes.
     pub fn create_home_nodes(&mut self, xoffset: f32, yoffset: f32) -> NodeId {
         let home = MazeData::from_rows(&[
             &['X', 'X', '+', 'X', 'X'],
@@ -172,7 +161,6 @@ impl NodeGroup {
         home_node
     }
 
-    /// Handles home nodes.
     pub fn connect_home_nodes(
         &mut self,
         home_node: NodeId,
@@ -208,7 +196,6 @@ impl NodeGroup {
     where
         I: IntoIterator<Item = EntityKind>,
     {
-        // Iterate through each item in the current collection or range.
         for entity in entities {
             self.deny_access(col, row, direction, entity);
         }
@@ -219,7 +206,6 @@ impl NodeGroup {
     where
         I: IntoIterator<Item = EntityKind>,
     {
-        // Iterate through each item in the current collection or range.
         for entity in entities {
             self.allow_access(col, row, direction, entity);
         }
@@ -227,7 +213,6 @@ impl NodeGroup {
 
     /// Denies home access.
     pub fn deny_home_access(&mut self, entity: EntityKind) {
-        // Branch based on the current runtime condition.
         if let Some(home_node) = self.home_node {
             self.nodes[home_node].deny_access(Direction::Down, entity);
         }
@@ -235,7 +220,6 @@ impl NodeGroup {
 
     /// Allows home access.
     pub fn allow_home_access(&mut self, entity: EntityKind) {
-        // Branch based on the current runtime condition.
         if let Some(home_node) = self.home_node {
             self.nodes[home_node].allow_access(Direction::Down, entity);
         }
@@ -246,7 +230,6 @@ impl NodeGroup {
     where
         I: IntoIterator<Item = EntityKind>,
     {
-        // Iterate through each item in the current collection or range.
         for entity in entities {
             self.deny_home_access(entity);
         }
@@ -254,11 +237,8 @@ impl NodeGroup {
 
     /// Appends renderables.
     pub fn append_renderables(&self, frame: &mut FrameData) {
-        // Iterate through each item in the current collection or range.
         for (index, node) in self.nodes.iter().enumerate() {
-            // Iterate through each item in the current collection or range.
             for direction in Direction::cardinals() {
-                // Branch based on the current runtime condition.
                 if let Some(neighbor_id) = self.neighbor(index, direction) {
                     frame.lines.push(Line {
                         start: node.position,
@@ -269,7 +249,6 @@ impl NodeGroup {
                 }
             }
 
-            // Branch based on the current runtime condition.
             if let Some(portal_id) = self.portal(index) {
                 frame.lines.push(Line {
                     start: node.position,
@@ -287,7 +266,6 @@ impl NodeGroup {
         }
     }
 
-    /// Handles text.
     fn from_text(text: &str, node_symbols: &[char], path_symbols: &[char]) -> Self {
         let maze = MazeData::parse(text);
         let mut group = Self::default();
@@ -297,7 +275,6 @@ impl NodeGroup {
         group
     }
 
-    /// Handles node table.
     fn create_node_table(
         &mut self,
         data: &MazeData,
@@ -305,14 +282,10 @@ impl NodeGroup {
         xoffset: f32,
         yoffset: f32,
     ) {
-        // Iterate through each item in the current collection or range.
         for row in 0..data.tiles.len() {
-            // Iterate through each item in the current collection or range.
             for col in 0..data.width {
-                // Branch based on the current runtime condition.
                 if node_symbols.contains(&data.tiles[row][col]) {
                     let key = Self::construct_key(col as f32 + xoffset, row as f32 + yoffset);
-                    // Branch based on the current runtime condition.
                     if self.lookup.contains_key(&key) {
                         continue;
                     }
@@ -325,7 +298,6 @@ impl NodeGroup {
         }
     }
 
-    /// Handles horizontally.
     fn connect_horizontally(
         &mut self,
         data: &MazeData,
@@ -334,18 +306,14 @@ impl NodeGroup {
         xoffset: f32,
         yoffset: f32,
     ) {
-        // Iterate through each item in the current collection or range.
         for row in 0..data.tiles.len() {
             let mut current: Option<NodeId> = None;
-            // Iterate through each item in the current collection or range.
             for col in 0..data.width {
                 let symbol = data.tiles[row][col];
-                // Branch based on the current runtime condition.
                 if node_symbols.contains(&symbol) {
                     let node_id = self
                         .get_node_from_tiles(col as f32 + xoffset, row as f32 + yoffset)
                         .expect("node should exist after lookup table creation");
-                    // Branch based on the current runtime condition.
                     if let Some(previous) = current {
                         link_neighbors(&mut self.nodes, previous, Direction::Right, node_id);
                         link_neighbors(&mut self.nodes, node_id, Direction::Left, previous);
@@ -358,7 +326,6 @@ impl NodeGroup {
         }
     }
 
-    /// Handles vertically.
     fn connect_vertically(
         &mut self,
         data: &MazeData,
@@ -367,18 +334,14 @@ impl NodeGroup {
         xoffset: f32,
         yoffset: f32,
     ) {
-        // Iterate through each item in the current collection or range.
         for col in 0..data.width {
             let mut current: Option<NodeId> = None;
-            // Iterate through each item in the current collection or range.
             for row in 0..data.tiles.len() {
                 let symbol = data.tiles[row][col];
-                // Branch based on the current runtime condition.
                 if node_symbols.contains(&symbol) {
                     let node_id = self
                         .get_node_from_tiles(col as f32 + xoffset, row as f32 + yoffset)
                         .expect("node should exist after lookup table creation");
-                    // Branch based on the current runtime condition.
                     if let Some(previous) = current {
                         link_neighbors(&mut self.nodes, previous, Direction::Down, node_id);
                         link_neighbors(&mut self.nodes, node_id, Direction::Up, previous);
@@ -391,7 +354,6 @@ impl NodeGroup {
         }
     }
 
-    /// Handles key.
     fn construct_key(col: f32, row: f32) -> (i32, i32) {
         (
             (col * TILE_WIDTH as f32).round() as i32,
@@ -427,7 +389,6 @@ impl MazeData {
         Self { tiles, width }
     }
 
-    /// Handles rows.
     fn from_rows(rows: &[&[char]]) -> Self {
         let tiles = rows.iter().map(|row| row.to_vec()).collect::<Vec<_>>();
         let width = tiles
@@ -439,7 +400,6 @@ impl MazeData {
     }
 }
 
-/// Handles neighbors.
 fn link_neighbors(nodes: &mut [Node], node_id: NodeId, direction: Direction, neighbor_id: NodeId) {
     let index = direction
         .neighbor_index()
@@ -453,7 +413,6 @@ mod tests {
     use crate::{actors::EntityKind, pacman::Direction};
 
     #[test]
-    /// Handles maze matches the arcade logic layout.
     fn pacman_maze_matches_the_arcade_logic_layout() {
         let nodes = NodeGroup::pacman_maze();
 
@@ -464,7 +423,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles pairs link the expected nodes.
     fn portal_pairs_link_the_expected_nodes() {
         let mut nodes = NodeGroup::pacman_maze();
         nodes.set_portal_pair((0.0, 17.0), (27.0, 17.0));
@@ -482,7 +440,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles nodes are created and connected.
     fn home_nodes_are_created_and_connected() {
         let mut nodes = NodeGroup::pacman_maze();
         let home = nodes.create_home_nodes(11.5, 14.0);
@@ -502,7 +459,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles access blocks travel for the requested entity only.
     fn denied_access_blocks_travel_for_the_requested_entity_only() {
         let mut nodes = NodeGroup::pacman_maze();
         let home = nodes.create_home_nodes(11.5, 14.0);

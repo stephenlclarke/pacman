@@ -26,7 +26,6 @@ pub struct KittyGraphics {
 }
 
 impl KittyGraphics {
-    /// Creates new.
     pub fn new(placement_cols: u16, placement_rows: u16) -> Self {
         Self {
             placement_cols,
@@ -43,7 +42,6 @@ impl KittyGraphics {
         let force = std::env::var("PACMAN_FORCE_KITTY").unwrap_or_default();
         let kitty_window = std::env::var_os("KITTY_WINDOW_ID").is_some();
 
-        // Branch based on the current runtime condition.
         if force == "1" || kitty_window || is_known_kitty_graphics_terminal(&term, &term_program) {
             return Ok(());
         }
@@ -51,7 +49,6 @@ impl KittyGraphics {
         validate_environment(&term, std::io::stdout().is_terminal())
     }
 
-    /// Handles resize.
     pub fn resize(&mut self, placement_cols: u16, placement_rows: u16) {
         self.placement_cols = placement_cols;
         self.placement_rows = placement_rows;
@@ -66,10 +63,8 @@ impl KittyGraphics {
 
         queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
 
-        // Iterate through each item in the current collection or range.
         for (index, chunk) in self.base64_buffer.as_bytes().chunks(CHUNK_SIZE).enumerate() {
             let more = if index + 1 == chunk_count { 0 } else { 1 };
-            // Branch based on the current runtime condition.
             if index == 0 {
                 write!(
                     stdout,
@@ -94,7 +89,6 @@ impl KittyGraphics {
     }
 }
 
-/// Handles known kitty graphics terminal.
 fn is_known_kitty_graphics_terminal(term: &str, term_program: &str) -> bool {
     term == "xterm-kitty"
         || term == "xterm-ghostty"
@@ -103,9 +97,7 @@ fn is_known_kitty_graphics_terminal(term: &str, term_program: &str) -> bool {
         || term_program == "WarpTerminal"
 }
 
-/// Handles environment.
 fn validate_environment(term: &str, is_terminal: bool) -> Result<()> {
-    // Branch based on the current runtime condition.
     if !is_terminal {
         bail!(
             "Kitty graphics output requires an interactive terminal on stdout. \
@@ -113,7 +105,6 @@ fn validate_environment(term: &str, is_terminal: bool) -> Result<()> {
         );
     }
 
-    // Branch based on the current runtime condition.
     if term.is_empty() || term == "dumb" {
         bail!(
             "TERM={term:?} does not expose the interactive terminal capabilities needed for \
@@ -126,14 +117,12 @@ fn validate_environment(term: &str, is_terminal: bool) -> Result<()> {
 }
 
 #[cfg(test)]
-/// Handles png.
 fn encode_png(image: &RenderedImage) -> Result<Vec<u8>> {
     let mut encoded = Vec::new();
     encode_png_into(image, &mut encoded)?;
     Ok(encoded)
 }
 
-/// Handles png into.
 fn encode_png_into(image: &RenderedImage, encoded: &mut Vec<u8>) -> Result<()> {
     encoded.clear();
     let mut encoder = Encoder::new(encoded, image.width, image.height);
@@ -158,31 +147,25 @@ mod tests {
     };
     use crate::render::RenderedImage;
 
-    /// Handles lock.
     fn env_lock() -> &'static Mutex<()> {
         static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         ENV_LOCK.get_or_init(|| Mutex::new(()))
     }
 
-    /// Handles env vars.
     fn with_env_vars<T>(vars: &[(&str, Option<&str>)], f: impl FnOnce() -> T) -> T {
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let previous = vars
             .iter()
             .map(|(key, _)| ((*key).to_string(), env::var_os(key)))
             .collect::<Vec<_>>();
-        // Iterate through each item in the current collection or range.
         for (key, value) in vars {
-            // Select the next behavior based on the current state.
             match value {
                 Some(value) => unsafe { env::set_var(key, value) },
                 None => unsafe { env::remove_var(key) },
             }
         }
         let result = f();
-        // Iterate through each item in the current collection or range.
         for (key, value) in previous {
-            // Select the next behavior based on the current state.
             match value {
                 Some(value) => unsafe { env::set_var(&key, value) },
                 None => unsafe { env::remove_var(&key) },
@@ -192,7 +175,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles encoder writes signature.
     fn png_encoder_writes_signature() {
         let image = RenderedImage {
             width: 2,
@@ -207,25 +189,21 @@ mod tests {
     }
 
     #[test]
-    /// Handles size matches protocol limit.
     fn chunk_size_matches_protocol_limit() {
         assert_eq!(CHUNK_SIZE, 4_096);
     }
 
     #[test]
-    /// Handles check allows interactive terminals.
     fn environment_check_allows_interactive_terminals() {
         validate_environment("xterm-256color", true).expect("interactive terminals should pass");
     }
 
     #[test]
-    /// Handles check rejects dumb terminals.
     fn environment_check_rejects_dumb_terminals() {
         assert!(validate_environment("dumb", true).is_err());
     }
 
     #[test]
-    /// Handles terminals include kitty.
     fn known_terminals_include_kitty() {
         assert!(is_known_kitty_graphics_terminal("xterm-kitty", ""));
         assert!(is_known_kitty_graphics_terminal("xterm-ghostty", "ghostty"));
@@ -233,7 +211,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles flag bypasses terminal detection.
     fn force_flag_bypasses_terminal_detection() {
         with_env_vars(
             &[
@@ -248,7 +225,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles window identifier bypasses terminal detection.
     fn kitty_window_id_bypasses_terminal_detection() {
         with_env_vars(
             &[
@@ -264,7 +240,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles updates placement dimensions.
     fn resize_updates_placement_dimensions() {
         let mut graphics = KittyGraphics::new(10, 20);
         graphics.resize(30, 40);

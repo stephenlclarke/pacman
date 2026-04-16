@@ -87,7 +87,6 @@ pub struct MazeSprites {
 }
 
 impl PacmanSprites {
-    /// Creates new.
     pub fn new() -> Self {
         let assets = shared_arcade_assets();
         let stop_left = assets.pacman_left.clone();
@@ -123,7 +122,6 @@ impl PacmanSprites {
         self.chomp_open = false;
     }
 
-    /// Updates update.
     pub fn update(&mut self, dt: f32, direction: Direction) -> Arc<RenderedImage> {
         self.update_for_state(dt, direction, true)
     }
@@ -136,14 +134,12 @@ impl PacmanSprites {
         alive: bool,
     ) -> Arc<RenderedImage> {
         self.current = if alive {
-            // Branch based on the current runtime condition.
             if direction == Direction::Stop {
                 self.chomp_dt = 0.0;
                 self.chomp_open = false;
                 self.stop_image.clone()
             } else {
                 self.chomp_dt += dt;
-                // Branch based on the current runtime condition.
                 if self.chomp_dt >= 1.0 / 20.0 {
                     self.chomp_open = !self.chomp_open;
                     self.chomp_dt = 0.0;
@@ -169,7 +165,6 @@ impl PacmanSprites {
                     Direction::Stop => unreachable!("stop handled above"),
                 };
 
-                // Branch based on the current runtime condition.
                 if self.chomp_open {
                     directional_image
                 } else {
@@ -183,21 +178,18 @@ impl PacmanSprites {
         self.current.clone()
     }
 
-    /// Handles current.
     pub fn current(&self) -> Arc<RenderedImage> {
         self.current.clone()
     }
 }
 
 impl Default for PacmanSprites {
-    /// Handles default.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl GhostSprites {
-    /// Creates new.
     pub fn new() -> Self {
         let assets = shared_arcade_assets();
         let left = assets.ghost_left.clone();
@@ -221,7 +213,6 @@ impl GhostSprites {
         }
     }
 
-    /// Handles image.
     pub fn image(
         &self,
         kind: GhostKind,
@@ -232,7 +223,6 @@ impl GhostSprites {
     ) -> Arc<RenderedImage> {
         let index = kind.index();
 
-        // Select the next behavior based on the current state.
         match mode {
             GhostMode::Scatter | GhostMode::Chase => match direction {
                 Direction::Up => self.up[index].clone(),
@@ -252,7 +242,6 @@ impl GhostSprites {
         }
     }
 
-    /// Handles image.
     fn freight_image(
         &self,
         freight_remaining: Option<f32>,
@@ -268,7 +257,6 @@ impl GhostSprites {
             .zip(fright_total_duration)
             .is_some_and(|(remaining, total)| remaining <= arcade::fright_flash_duration(total));
 
-        // Branch based on the current runtime condition.
         if flashing {
             self.freight_flash[frame].clone()
         } else {
@@ -278,14 +266,12 @@ impl GhostSprites {
 }
 
 impl Default for GhostSprites {
-    /// Handles default.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl FruitSprites {
-    /// Creates new.
     pub fn new() -> Self {
         let assets = shared_arcade_assets();
         Self {
@@ -294,36 +280,30 @@ impl FruitSprites {
         }
     }
 
-    /// Handles image.
     pub fn item_image(&self, index: usize) -> Arc<RenderedImage> {
         self.items[index % self.items.len()].clone()
     }
 
-    /// Handles image.
     pub fn icon_image(&self, index: usize) -> Arc<RenderedImage> {
         self.icons[index % self.icons.len()].clone()
     }
 
-    /// Handles image.
     pub fn image(&self, index: usize) -> Arc<RenderedImage> {
         self.item_image(index)
     }
 
-    /// Handles for level.
     pub fn image_for_level(&self, level_index: u32) -> Arc<RenderedImage> {
         self.item_image(level_index as usize)
     }
 }
 
 impl Default for FruitSprites {
-    /// Handles default.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl LifeSprites {
-    /// Creates new.
     pub fn new(num_lives: u32) -> Self {
         Self {
             image: shared_arcade_assets().pacman_left.clone(),
@@ -331,7 +311,6 @@ impl LifeSprites {
         }
     }
 
-    /// Handles image.
     pub fn remove_image(&mut self) {
         self.lives = self.lives.saturating_sub(1);
     }
@@ -341,19 +320,16 @@ impl LifeSprites {
         self.lives = num_lives as usize;
     }
 
-    /// Handles lives.
     pub fn lives(&self) -> usize {
         self.lives
     }
 
-    /// Handles image.
     pub fn image(&self) -> Arc<RenderedImage> {
         self.image.clone()
     }
 }
 
 impl MazeSprites {
-    /// Creates new.
     pub fn new() -> Self {
         Self {
             background: load_embedded_png(include_bytes!("../assets/arcade/maze-blue.png")),
@@ -361,30 +337,25 @@ impl MazeSprites {
         }
     }
 
-    /// Handles layout.
     pub fn from_layout(_layout: &str) -> Self {
         Self::new()
     }
 
-    /// Handles background.
     pub fn construct_background(&self, _level: u32) -> Arc<RenderedImage> {
         self.background.clone()
     }
 
-    /// Handles flash background.
     pub fn construct_flash_background(&self) -> Arc<RenderedImage> {
         self.flash_background.clone()
     }
 }
 
 impl Default for MazeSprites {
-    /// Handles default.
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Handles arcade assets.
 fn shared_arcade_assets() -> &'static ArcadeActorAssets {
     static ASSETS: OnceLock<ArcadeActorAssets> = OnceLock::new();
     ASSETS.get_or_init(|| ArcadeActorAssets {
@@ -472,7 +443,6 @@ fn load_embedded_png(bytes: &'static [u8]) -> Arc<RenderedImage> {
     Arc::new(decode_png_image(bytes).expect("embedded png should decode correctly"))
 }
 
-/// Handles png image.
 fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
     let mut decoder = Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
@@ -496,9 +466,7 @@ fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
     };
 
     let transparent = rgba[..4].to_vec();
-    // Iterate through each item in the current collection or range.
     for chunk in rgba.chunks_exact_mut(4) {
-        // Branch based on the current runtime condition.
         if chunk[..3] == transparent[..3] {
             chunk[3] = 0;
         }
@@ -511,30 +479,24 @@ fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
     })
 }
 
-/// Handles to rgba.
 fn rgb_to_rgba(raw: &[u8]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(raw.len() / 3 * 4);
-    // Iterate through each item in the current collection or range.
     for chunk in raw.chunks_exact(3) {
         rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
     }
     rgba
 }
 
-/// Handles to rgba.
 fn grayscale_to_rgba(raw: &[u8]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(raw.len() * 4);
-    // Iterate through each item in the current collection or range.
     for value in raw {
         rgba.extend_from_slice(&[*value, *value, *value, 255]);
     }
     rgba
 }
 
-/// Handles alpha to rgba.
 fn grayscale_alpha_to_rgba(raw: &[u8]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(raw.len() / 2 * 4);
-    // Iterate through each item in the current collection or range.
     for chunk in raw.chunks_exact(2) {
         rgba.extend_from_slice(&[chunk[0], chunk[0], chunk[0], chunk[1]]);
     }
@@ -548,16 +510,13 @@ mod tests {
     use super::{LifeSprites, MazeSprites, PacmanSprites};
     use crate::{pacman::Direction, render::RenderedImage};
 
-    /// Handles mirror.
     fn mirror(image: &RenderedImage) -> RenderedImage {
         let mut pixels = vec![0; image.pixels.len()];
         let width = image.width as usize;
         let height = image.height as usize;
         let stride = width * 4;
-        // Iterate through each item in the current collection or range.
         for y in 0..height {
             let row_start = y * stride;
-            // Iterate through each item in the current collection or range.
             for x in 0..width {
                 let src = row_start + x * 4;
                 let dst = row_start + (width - 1 - x) * 4;
@@ -572,13 +531,11 @@ mod tests {
         }
     }
 
-    /// Handles flip.
     fn flip(image: &RenderedImage) -> RenderedImage {
         let mut pixels = vec![0; image.pixels.len()];
         let width = image.width as usize;
         let height = image.height as usize;
         let stride = width * 4;
-        // Iterate through each item in the current collection or range.
         for y in 0..height {
             let src_row_start = y * stride;
             let dst_row_start = (height - 1 - y) * stride;
@@ -594,7 +551,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles sprites use arcade sprite dimensions.
     fn pacman_sprites_use_arcade_sprite_dimensions() {
         let sprites = PacmanSprites::new();
         let image = sprites.current();
@@ -604,7 +560,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles background matches screen size.
     fn maze_background_matches_screen_size() {
         let maze = MazeSprites::new();
         let image = maze.construct_background(1);
@@ -614,7 +569,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles death animation advances to a different frame.
     fn pacman_death_animation_advances_to_a_different_frame() {
         let mut sprites = PacmanSprites::new();
 
@@ -625,7 +579,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles directional frames match right and down mirrors.
     fn pacman_directional_frames_match_right_and_down_mirrors() {
         let right = Arc::unwrap_or_clone(PacmanSprites::new().update_for_state(
             0.1,
@@ -646,7 +599,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles sprites cycle by level.
     fn fruit_sprites_cycle_by_level() {
         let sprites = super::FruitSprites::new();
 
@@ -663,7 +615,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles sprites track remaining lives.
     fn life_sprites_track_remaining_lives() {
         let mut lives = LifeSprites::new(5);
         lives.remove_image();

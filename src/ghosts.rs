@@ -78,7 +78,6 @@ struct GhostMovePatterns {
 }
 
 impl GhostMovePatterns {
-    /// Handles level.
     fn for_level(level: u32) -> Self {
         let patterns = move_patterns(level);
         Self {
@@ -92,7 +91,6 @@ impl GhostMovePatterns {
 }
 
 impl Ghost {
-    /// Creates new.
     pub fn new(kind: GhostKind, node: NodeId, nodes: &NodeGroup, level: u32) -> Self {
         let mut ghost = Self {
             kind,
@@ -120,72 +118,58 @@ impl Ghost {
         ghost
     }
 
-    /// Handles kind.
     pub fn kind(&self) -> GhostKind {
         self.kind
     }
 
-    /// Handles kind.
     pub fn entity_kind(&self) -> EntityKind {
         self.kind.entity()
     }
 
-    /// Handles position.
     pub fn position(&self) -> Vector2 {
         self.position
     }
 
-    /// Handles direction.
     pub fn direction(&self) -> Direction {
         self.direction
     }
 
-    /// Handles node.
     pub fn current_node(&self) -> NodeId {
         self.node
     }
 
-    /// Handles node.
     pub fn target_node(&self) -> NodeId {
         self.target
     }
 
-    /// Handles speed.
     pub fn speed(&self) -> f32 {
         self.speed
     }
 
-    /// Handles radius.
     pub fn collide_radius(&self) -> f32 {
         self.collide_radius
     }
 
-    /// Handles mode.
     pub fn mode(&self) -> GhostMode {
         self.mode.current()
     }
 
-    /// Handles remaining.
     pub fn freight_remaining(&self) -> Option<f32> {
         self.mode.fright_remaining()
     }
 
-    /// Handles total duration.
     pub fn fright_total_duration(&self) -> Option<f32> {
         self.mode.fright_total_duration()
     }
 
-    /// Handles visible.
     pub fn visible(&self) -> bool {
         self.visible
     }
 
-    /// Handles points.
     pub fn points(&self) -> u32 {
         self.points
     }
 
-    /// Handles renderable.
     pub fn renderable(&self) -> Circle {
         Circle {
             center: self.position,
@@ -250,11 +234,9 @@ impl Ghost {
     /// Starts freight.
     pub fn start_freight(&mut self) {
         let reversed = self.mode.set_freight_mode();
-        // Branch based on the current runtime condition.
         if reversed {
             self.reverse_pending = true;
         }
-        // Branch based on the current runtime condition.
         if self.mode.current() == GhostMode::Freight {
             self.direction_method = DirectionMethod::Random;
         }
@@ -262,15 +244,12 @@ impl Ghost {
 
     /// Sustains freight.
     pub fn sustain_freight(&mut self) {
-        // Branch based on the current runtime condition.
         if matches!(self.mode.current(), GhostMode::Scatter | GhostMode::Chase) {
             self.start_freight();
         }
     }
 
-    /// Handles freight.
     pub fn end_freight(&mut self) {
-        // Branch based on the current runtime condition.
         if self.mode.clear_freight_mode() {
             self.normal_mode();
         }
@@ -279,17 +258,14 @@ impl Ghost {
     /// Starts spawn.
     pub fn start_spawn(&mut self, nodes: &NodeGroup) {
         self.mode.set_spawn_mode();
-        // Branch based on the current runtime condition.
         if self.mode.current() == GhostMode::Spawn {
             self.direction_method = DirectionMethod::Goal;
-            // Branch based on the current runtime condition.
             if let Some(spawn_node) = self.spawn_node {
                 self.goal = nodes.position(spawn_node);
             }
         }
     }
 
-    /// Handles points.
     pub fn double_points(&mut self) {
         self.points *= 2;
     }
@@ -299,15 +275,12 @@ impl Ghost {
         self.points = 200;
     }
 
-    /// Updates update.
     fn update(&mut self, dt: f32, nodes: &NodeGroup, context: GhostUpdateContext) -> bool {
         let at_spawn_node = self.spawn_node.is_some_and(|spawn| self.node == spawn);
         let transition = self.mode.update(dt, at_spawn_node);
-        // Branch based on the current runtime condition.
         if transition.returned_to_normal {
             self.normal_mode();
         }
-        // Branch based on the current runtime condition.
         if transition.reversed {
             self.reverse_pending = true;
         }
@@ -316,7 +289,6 @@ impl Ghost {
             && context.elroy_enabled
             && context.dots_remaining <= spec.elroy_one_dots_left;
 
-        // Select the next behavior based on the current state.
         match self.mode.current() {
             GhostMode::Scatter => {
                 self.goal = if elroy_active {
@@ -346,10 +318,8 @@ impl Ghost {
         self.frame_accumulator += dt;
         let frames = (self.frame_accumulator / ORIGINAL_FRAME_TIME) as usize;
         self.frame_accumulator -= frames as f32 * ORIGINAL_FRAME_TIME;
-        // Iterate through each item in the current collection or range.
         for _ in 0..frames {
             let steps = self.frame_steps(nodes, context);
-            // Iterate through each item in the current collection or range.
             for _ in 0..steps {
                 self.advance_position_step(nodes);
             }
@@ -358,9 +328,7 @@ impl Ghost {
         transition.returned_to_normal
     }
 
-    /// Handles goal.
     fn scatter_goal(&self) -> Vector2 {
-        // Select the next behavior based on the current state.
         match self.kind {
             GhostKind::Blinky => Vector2::default(),
             GhostKind::Pinky => Vector2::new(TILE_WIDTH as f32 * NCOLS as f32, 0.0),
@@ -372,7 +340,6 @@ impl Ghost {
         }
     }
 
-    /// Handles goal.
     fn chase_goal(
         &self,
         pacman_position: Vector2,
@@ -380,7 +347,6 @@ impl Ghost {
         blinky_position: Vector2,
     ) -> Vector2 {
         let tile = TILE_WIDTH as f32;
-        // Select the next behavior based on the current state.
         match self.kind {
             GhostKind::Blinky => pacman_position,
             GhostKind::Pinky => pacman_position + arcade_offset(pacman_direction, 4, true, tile),
@@ -390,7 +356,6 @@ impl Ghost {
             }
             GhostKind::Clyde => {
                 let distance = pacman_position - self.position;
-                // Branch based on the current runtime condition.
                 if distance.magnitude_squared() <= (tile * 8.0) * (tile * 8.0) {
                     self.scatter_goal()
                 } else {
@@ -400,7 +365,6 @@ impl Ghost {
         }
     }
 
-    /// Handles mode.
     fn normal_mode(&mut self) {
         self.direction_method = DirectionMethod::Goal;
     }
@@ -425,19 +389,16 @@ impl Ghost {
         self.speed = PACMAN_SPEED * percent;
     }
 
-    /// Handles mode speed.
     fn normal_mode_speed(
         &self,
         spec: crate::arcade::ArcadeLevelSpec,
         dots_remaining: usize,
         elroy_enabled: bool,
     ) -> f32 {
-        // Branch based on the current runtime condition.
         if self.kind != GhostKind::Blinky || !elroy_enabled {
             return spec.ghost_speed;
         }
 
-        // Branch based on the current runtime condition.
         if dots_remaining <= spec.elroy_two_dots_left {
             spec.elroy_two_speed
         } else if dots_remaining <= spec.elroy_one_dots_left {
@@ -447,16 +408,13 @@ impl Ghost {
         }
     }
 
-    /// Handles steps.
     fn frame_steps(&mut self, nodes: &NodeGroup, context: GhostUpdateContext) -> usize {
-        // Branch based on the current runtime condition.
         if self.mode.current() == GhostMode::Spawn {
             return 2;
         }
 
         let spec = level_spec(context.level);
         let elroy_state = if self.kind == GhostKind::Blinky && context.elroy_enabled {
-            // Branch based on the current runtime condition.
             if context.dots_remaining <= spec.elroy_two_dots_left {
                 Some(2)
             } else if context.dots_remaining <= spec.elroy_one_dots_left {
@@ -471,7 +429,6 @@ impl Ghost {
         let move_now = if self.in_tunnel(nodes) {
             self.move_patterns.tunnel.advance()
         } else {
-            // Select the next behavior based on the current state.
             match self.mode.current() {
                 GhostMode::Freight => self.move_patterns.frightened.advance(),
                 GhostMode::Scatter | GhostMode::Chase => match elroy_state {
@@ -489,11 +446,9 @@ impl Ghost {
     /// Advances position step.
     fn advance_position_step(&mut self, nodes: &NodeGroup) {
         self.position += self.direction.vector() * ARCADE_PIXEL_STEP;
-        // Branch based on the current runtime condition.
         if self.overshot_target(nodes) {
             self.node = self.target;
             self.position = nodes.position(self.node);
-            // Branch based on the current runtime condition.
             if self.consume_pending_reverse(nodes) {
                 return;
             }
@@ -503,14 +458,12 @@ impl Ghost {
                 DirectionMethod::Random => self.random_direction(&directions),
             };
 
-            // Branch based on the current runtime condition.
             if let Some(portal) = nodes.portal(self.node) {
                 self.node = portal;
                 self.position = nodes.position(self.node);
             }
 
             self.target = self.get_new_target(next_direction, nodes);
-            // Branch based on the current runtime condition.
             if self.target != self.node {
                 self.direction = next_direction;
             } else {
@@ -521,14 +474,11 @@ impl Ghost {
         }
     }
 
-    /// Handles direction.
     fn prime_direction(&mut self, nodes: &NodeGroup) {
-        // Branch based on the current runtime condition.
         if self.target == self.node && self.consume_pending_reverse(nodes) {
             return;
         }
 
-        // Branch based on the current runtime condition.
         if self.target != self.node {
             return;
         }
@@ -539,7 +489,6 @@ impl Ghost {
             DirectionMethod::Random => self.random_direction(&directions),
         };
         self.target = self.get_new_target(next_direction, nodes);
-        // Branch based on the current runtime condition.
         if self.target != self.node {
             self.direction = next_direction;
         }
@@ -550,31 +499,24 @@ impl Ghost {
         self.position = nodes.position(self.node);
     }
 
-    /// Handles start position override.
     fn apply_start_position_override(&mut self) {
-        // Branch based on the current runtime condition.
         if let Some(position) = self.start_position_override {
             self.position = position;
         }
     }
 
-    /// Handles direction.
     fn valid_direction(&self, direction: Direction, nodes: &NodeGroup) -> bool {
         direction != Direction::Stop && nodes.can_travel(self.node, direction, self.entity_kind())
     }
 
-    /// Handles directions.
     fn valid_directions(&self, nodes: &NodeGroup) -> Vec<Direction> {
         let mut directions = Vec::new();
-        // Iterate through each item in the current collection or range.
         for direction in Direction::cardinals() {
-            // Branch based on the current runtime condition.
             if self.valid_direction(direction, nodes) && direction != self.direction.opposite() {
                 directions.push(direction);
             }
         }
 
-        // Branch based on the current runtime condition.
         if directions.is_empty() {
             directions.push(self.direction.opposite());
         }
@@ -582,7 +524,6 @@ impl Ghost {
         directions
     }
 
-    /// Handles direction.
     fn random_direction(&self, directions: &[Direction]) -> Direction {
         let order = [
             Direction::Up,
@@ -591,10 +532,8 @@ impl Ghost {
             Direction::Left,
         ];
         let start = fastrand::usize(..order.len());
-        // Iterate through each item in the current collection or range.
         for offset in 0..order.len() {
             let direction = order[(start + offset) % order.len()];
-            // Branch based on the current runtime condition.
             if directions.contains(&direction) {
                 return direction;
             }
@@ -603,26 +542,22 @@ impl Ghost {
         directions[0]
     }
 
-    /// Handles direction.
     fn goal_direction(&self, directions: &[Direction], nodes: &NodeGroup) -> Direction {
         let mut best = directions[0];
         let mut best_distance = f32::INFINITY;
 
-        // Iterate through each item in the current collection or range.
         for direction in [
             Direction::Up,
             Direction::Left,
             Direction::Down,
             Direction::Right,
         ] {
-            // Branch based on the current runtime condition.
             if !directions.contains(&direction) {
                 continue;
             }
             let next_position =
                 nodes.position(self.node) + direction.vector() * TILE_WIDTH as f32 - self.goal;
             let distance = next_position.magnitude_squared();
-            // Branch based on the current runtime condition.
             if distance < best_distance {
                 best = direction;
                 best_distance = distance;
@@ -634,7 +569,6 @@ impl Ghost {
 
     /// Gets new target.
     fn get_new_target(&self, direction: Direction, nodes: &NodeGroup) -> NodeId {
-        // Branch based on the current runtime condition.
         if self.valid_direction(direction, nodes) {
             nodes.neighbor(self.node, direction).unwrap_or(self.node)
         } else {
@@ -642,16 +576,13 @@ impl Ghost {
         }
     }
 
-    /// Handles target.
     fn overshot_target(&self, nodes: &NodeGroup) -> bool {
         let node_to_target = nodes.position(self.target) - nodes.position(self.node);
         let node_to_self = self.position - nodes.position(self.node);
         node_to_self.magnitude_squared() >= node_to_target.magnitude_squared()
     }
 
-    /// Handles pending reverse.
     fn consume_pending_reverse(&mut self, nodes: &NodeGroup) -> bool {
-        // Branch based on the current runtime condition.
         if !self.reverse_pending || self.direction == Direction::Stop {
             return false;
         }
@@ -662,7 +593,6 @@ impl Ghost {
         true
     }
 
-    /// Handles tunnel.
     fn in_tunnel(&self, nodes: &NodeGroup) -> bool {
         let current = nodes.position(self.node);
         let target = nodes.position(self.target);
@@ -677,7 +607,6 @@ impl Ghost {
 }
 
 impl GhostGroup {
-    /// Creates new.
     pub fn new(node: NodeId, nodes: &NodeGroup, level: u32) -> Self {
         Self {
             ghosts: [
@@ -689,27 +618,22 @@ impl GhostGroup {
         }
     }
 
-    /// Handles iter.
     pub fn iter(&self) -> impl Iterator<Item = &Ghost> {
         self.ghosts.iter()
     }
 
-    /// Handles ghost.
     pub fn ghost(&self, kind: GhostKind) -> &Ghost {
         &self.ghosts[kind.index()]
     }
 
-    /// Handles mut.
     pub fn ghost_mut(&mut self, kind: GhostKind) -> &mut Ghost {
         &mut self.ghosts[kind.index()]
     }
 
-    /// Handles kinds.
     pub fn entity_kinds(&self) -> [EntityKind; 4] {
         GhostKind::ALL.map(GhostKind::entity)
     }
 
-    /// Updates update.
     pub fn update(
         &mut self,
         dt: f32,
@@ -718,7 +642,6 @@ impl GhostGroup {
     ) -> Vec<EntityKind> {
         let mut returned_to_normal = Vec::new();
 
-        // Iterate through each item in the current collection or range.
         for kind in GhostKind::ALL {
             let ghost_context = GhostUpdateContext {
                 pacman_position: context.pacman_position,
@@ -729,7 +652,6 @@ impl GhostGroup {
                 elroy_enabled: context.elroy_enabled,
             };
             let ghost = self.ghost_mut(kind);
-            // Branch based on the current runtime condition.
             if ghost.update(dt, nodes, ghost_context) {
                 returned_to_normal.push(ghost.entity_kind());
             }
@@ -740,7 +662,6 @@ impl GhostGroup {
 
     /// Starts freight.
     pub fn start_freight(&mut self) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.start_freight();
         }
@@ -749,21 +670,17 @@ impl GhostGroup {
 
     /// Sustains freight.
     pub fn sustain_freight(&mut self) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.sustain_freight();
         }
     }
 
-    /// Handles freight.
     pub fn end_freight(&mut self) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.end_freight();
         }
     }
 
-    /// Handles freight mode.
     pub fn has_freight_mode(&self) -> bool {
         self.ghosts
             .iter()
@@ -772,7 +689,6 @@ impl GhostGroup {
 
     /// Sets spawn node.
     pub fn set_spawn_node(&mut self, node: NodeId) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.set_spawn_node(node);
         }
@@ -780,7 +696,6 @@ impl GhostGroup {
 
     /// Updates points.
     pub fn update_points(&mut self) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.double_points();
         }
@@ -788,7 +703,6 @@ impl GhostGroup {
 
     /// Resets points.
     pub fn reset_points(&mut self) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.reset_points();
         }
@@ -796,7 +710,6 @@ impl GhostGroup {
 
     /// Resets reset.
     pub fn reset(&mut self, nodes: &NodeGroup, level: u32) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.reset(nodes, level);
         }
@@ -804,7 +717,6 @@ impl GhostGroup {
 
     /// Hides hide.
     pub fn hide(&mut self) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.hide();
         }
@@ -812,16 +724,13 @@ impl GhostGroup {
 
     /// Shows show.
     pub fn show(&mut self) {
-        // Iterate through each item in the current collection or range.
         for ghost in &mut self.ghosts {
             ghost.show();
         }
     }
 }
 
-/// Handles offset.
 fn arcade_offset(direction: Direction, tiles: i32, overflow_bug: bool, tile_size: f32) -> Vector2 {
-    // Branch based on the current runtime condition.
     if overflow_bug && direction == Direction::Up {
         return Vector2::new(-(tiles as f32) * tile_size, -(tiles as f32) * tile_size);
     }
@@ -829,9 +738,7 @@ fn arcade_offset(direction: Direction, tiles: i32, overflow_bug: bool, tile_size
     direction.vector() * tile_size * tiles as f32
 }
 
-/// Handles for.
 fn color_for(kind: GhostKind) -> [u8; 4] {
-    // Select the next behavior based on the current state.
     match kind {
         GhostKind::Blinky => RED,
         GhostKind::Pinky => PINK,
@@ -854,7 +761,6 @@ mod tests {
     };
 
     #[test]
-    /// Handles starts in scatter mode.
     fn blinky_starts_in_scatter_mode() {
         let nodes = NodeGroup::pacman_maze();
         let ghost = Ghost::new(GhostKind::Blinky, nodes.start_node(), &nodes, 1);
@@ -864,7 +770,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles mode changes the ghost mode.
     fn freight_mode_changes_the_ghost_mode() {
         let nodes = NodeGroup::pacman_maze();
         let mut ghost = Ghost::new(GhostKind::Blinky, nodes.start_node(), &nodes, 1);
@@ -887,7 +792,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles mode targets the spawn node.
     fn spawn_mode_targets_the_spawn_node() {
         let mut nodes = NodeGroup::pacman_maze();
         nodes.create_home_nodes(11.5, 14.0);
@@ -903,7 +807,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles group contains all four ghosts.
     fn ghost_group_contains_all_four_ghosts() {
         let nodes = NodeGroup::pacman_maze();
         let ghosts = GhostGroup::new(nodes.start_node(), &nodes, 1);
@@ -924,7 +827,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles switches to scatter when pacman is close.
     fn clyde_switches_to_scatter_when_pacman_is_close() {
         let nodes = NodeGroup::pacman_maze();
         let mut ghost = Ghost::new(GhostKind::Clyde, nodes.start_node(), &nodes, 1);
@@ -946,7 +848,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles use portals in arcade rules.
     fn ghosts_use_portals_in_arcade_rules() {
         let mut nodes = NodeGroup::from_pacman_layout(
             "
@@ -977,7 +878,6 @@ mod tests {
                 elroy_enabled: true,
             },
         );
-        // Iterate through each item in the current collection or range.
         for _ in 0..64 {
             ghost.update(
                 ORIGINAL_FRAME_TIME,
@@ -991,7 +891,6 @@ mod tests {
                     elroy_enabled: true,
                 },
             );
-            // Branch based on the current runtime condition.
             if ghost.current_node() == right_portal {
                 break;
             }
@@ -1002,7 +901,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles move pattern advances the expected distance per cycle.
     fn ghost_move_pattern_advances_the_expected_distance_per_cycle() {
         let nodes = NodeGroup::from_pacman_layout("+ . + . + . + . +");
         let start = nodes
@@ -1022,7 +920,6 @@ mod tests {
                 elroy_enabled: true,
             },
         );
-        // Iterate through each item in the current collection or range.
         for _ in 0..32 {
             ghost.update(
                 ORIGINAL_FRAME_TIME,
@@ -1043,7 +940,6 @@ mod tests {
     }
 
     #[test]
-    /// Handles reversal waits until the next tile center.
     fn freight_reversal_waits_until_the_next_tile_center() {
         let nodes = NodeGroup::from_pacman_layout("+ . + . +");
         let start = nodes
@@ -1062,10 +958,8 @@ mod tests {
         assert_eq!(ghost.direction, Direction::Left);
         assert!(ghost.reverse_pending);
 
-        // Iterate through each item in the current collection or range.
         for _ in 0..16 {
             ghost.advance_position_step(&nodes);
-            // Branch based on the current runtime condition.
             if ghost.current_node() == left {
                 break;
             }
