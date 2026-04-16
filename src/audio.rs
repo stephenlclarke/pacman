@@ -1,15 +1,8 @@
 //! Embeds the game sound effects and coordinates audio playback for emitted gameplay events.
 
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread::{self, JoinHandle},
-};
+use std::io::Cursor;
+
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source, source::Repeat};
 
 use crate::game::GameEvent;
 
@@ -26,35 +19,26 @@ enum SoundAsset {
     SmallPellet,
 }
 
-#[derive(Debug, Default)]
-struct LoopingAudio {
-    stop: Option<Arc<AtomicBool>>,
-    child: Arc<Mutex<Option<Child>>>,
-    thread: Option<JoinHandle<()>>,
+struct AudioOutput {
+    stream: OutputStream,
 }
 
-#[derive(Debug, Default)]
+type SoundDecoder = Decoder<Cursor<&'static [u8]>>;
+type LoopingSoundDecoder = Repeat<SoundDecoder>;
+
 pub struct AudioManager {
-    enabled: bool,
-    title_music: LoopingAudio,
-    freight_sound: LoopingAudio,
+    output: Option<AudioOutput>,
+    title_music: Option<Sink>,
+    freight_sound: Option<Sink>,
+}
+
+impl Default for AudioManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SoundAsset {
-    const fn file_name(self) -> &'static str {
-        match self {
-            Self::ButtonClick => "button_click.ogg",
-            Self::Death => "death.wav",
-            Self::FreightMode => "fright_mode_short.wav",
-            Self::FruitEat => "fruit_eat.wav",
-            Self::GhostEat => "ghost_eat.wav",
-            Self::LevelComplete => "level_complete.wav",
-            Self::LevelStart => "level_start.wav",
-            Self::Music => "music.ogg",
-            Self::SmallPellet => "small_pellet2.wav",
-        }
-    }
-
     const fn bytes(self) -> &'static [u8] {
         match self {
             Self::ButtonClick => include_bytes!("../assets/sounds/button_click.ogg"),
@@ -70,87 +54,29 @@ impl SoundAsset {
     }
 }
 
-impl LoopingAudio {
-    fn play(&mut self, path: PathBuf) {
-        self.stop();
-
-        let stop = Arc::new(AtomicBool::new(false));
-        let stop_flag = stop.clone();
-        let child_slot = self.child.clone();
-        self.thread = Some(thread::spawn(move || {
-            while !stop_flag.load(Ordering::SeqCst) {
-                let child = Command::new("/usr/bin/afplay")
-                    .arg(&path)
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn();
-                let Ok(child) = child else {
-                    break;
-                };
-
-                {
-                    let mut slot = child_slot
-                        .lock()
-                        .expect("audio child slot should not be poisoned");
-                    *slot = Some(child);
-                }
-
-                let wait_result = {
-                    let mut slot = child_slot
-                        .lock()
-                        .expect("audio child slot should not be poisoned");
-                    slot.as_mut().expect("audio child should be present").wait()
-                };
-
-                {
-                    let mut slot = child_slot
-                        .lock()
-                        .expect("audio child slot should not be poisoned");
-                    *slot = None;
-                }
-
-                if wait_result.is_err() {
-                    break;
-                }
-            }
-        }));
-        self.stop = Some(stop);
+impl AudioOutput {
+    fn new() -> Option<Self> {
+        let mut stream = OutputStreamBuilder::open_default_stream().ok()?;
+        stream.log_on_drop(false);
+        Some(Self { stream })
     }
 
-    fn stop(&mut self) {
-        if let Some(stop) = &self.stop {
-            stop.store(true, Ordering::SeqCst);
-        }
-
-        if let Some(child) = self
-            .child
-            .lock()
-            .expect("audio child slot should not be poisoned")
-            .as_mut()
-        {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-
-        if let Some(handle) = self.thread.take() {
-            let _ = handle.join();
-        }
-
-        self.stop = None;
+    fn new_sink(&self) -> Sink {
+        Sink::connect_new(self.stream.mixer())
     }
 }
 
 impl AudioManager {
     pub fn new() -> Self {
         Self {
-            enabled: Path::new("/usr/bin/afplay").exists(),
-            title_music: LoopingAudio::default(),
-            freight_sound: LoopingAudio::default(),
+            output: AudioOutput::new(),
+            title_music: None,
+            freight_sound: None,
         }
     }
 
     pub fn handle_event(&mut self, event: GameEvent) {
-        if !self.enabled {
+        if self.output.is_none() {
             return;
         }
 
@@ -183,37 +109,41 @@ impl AudioManager {
     }
 
     fn play_title_music(&mut self) {
-        if let Some(path) = sound_path(SoundAsset::Music) {
-            self.title_music.play(path);
-        }
+        self.stop_title_music();
+        self.title_music = self.new_looping_sink(SoundAsset::Music);
     }
 
-    /// Stops title music.
     fn stop_title_music(&mut self) {
-        self.title_music.stop();
+        stop_sink(&mut self.title_music);
     }
 
     fn play_freight_sound(&mut self) {
-        if let Some(path) = sound_path(SoundAsset::FreightMode) {
-            self.freight_sound.play(path);
-        }
+        self.stop_freight_sound();
+        self.freight_sound = self.new_looping_sink(SoundAsset::FreightMode);
     }
 
-    /// Stops freight sound.
     fn stop_freight_sound(&mut self) {
-        self.freight_sound.stop();
+        stop_sink(&mut self.freight_sound);
     }
 
     fn play_effect(&self, sound: SoundAsset) {
-        let Some(path) = sound_path(sound) else {
+        let Some(output) = self.output.as_ref() else {
             return;
         };
+        let Some(source) = sound_decoder(sound) else {
+            return;
+        };
+        let sink = output.new_sink();
+        sink.append(source);
+        sink.detach();
+    }
 
-        let _ = Command::new("/usr/bin/afplay")
-            .arg(path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+    fn new_looping_sink(&self, sound: SoundAsset) -> Option<Sink> {
+        let output = self.output.as_ref()?;
+        let source = looping_sound_decoder(sound)?;
+        let sink = output.new_sink();
+        sink.append(source);
+        Some(sink)
     }
 }
 
@@ -224,46 +154,23 @@ impl Drop for AudioManager {
     }
 }
 
-fn sound_path(sound: SoundAsset) -> Option<PathBuf> {
-    let path = cached_sound_path(sound);
-    if ensure_embedded_sound(sound, &path).is_ok() {
-        Some(path)
-    } else {
-        None
+fn stop_sink(sink: &mut Option<Sink>) {
+    if let Some(sink) = sink.take() {
+        sink.stop();
     }
 }
 
-fn cached_sound_path(sound: SoundAsset) -> PathBuf {
-    env::temp_dir()
-        .join("pacman")
-        .join(env!("CARGO_PKG_VERSION"))
-        .join("sounds")
-        .join(sound.file_name())
+fn sound_decoder(sound: SoundAsset) -> Option<SoundDecoder> {
+    Decoder::new(Cursor::new(sound.bytes())).ok()
 }
 
-/// Ensures embedded sound.
-fn ensure_embedded_sound(sound: SoundAsset, path: &Path) -> std::io::Result<()> {
-    let bytes = sound.bytes();
-
-    if path
-        .metadata()
-        .map(|meta| meta.len() == bytes.len() as u64)
-        .unwrap_or(false)
-    {
-        return Ok(());
-    }
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, bytes)
+fn looping_sound_decoder(sound: SoundAsset) -> Option<LoopingSoundDecoder> {
+    sound_decoder(sound).map(Source::repeat_infinite)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use super::{LoopingAudio, SoundAsset, cached_sound_path, ensure_embedded_sound, sound_path};
+    use super::{SoundAsset, looping_sound_decoder, sound_decoder};
 
     fn all_assets() -> [SoundAsset; 9] {
         [
@@ -280,78 +187,23 @@ mod tests {
     }
 
     #[test]
-    fn embedded_sound_cache_uses_the_temp_directory() {
-        let path = cached_sound_path(SoundAsset::Music);
-
-        assert!(path.ends_with("pacman/0.1.0/sounds/music.ogg"));
-    }
-
-    #[test]
-    fn embedded_sound_files_can_be_materialized_for_playback() {
-        let path = sound_path(SoundAsset::Music).expect("embedded music should materialize");
-
-        assert!(path.exists());
-        assert!(
-            path.metadata()
-                .expect("embedded sound path should be readable")
-                .len()
-                > 0
-        );
-    }
-
-    #[test]
-    fn materialized_sound_matches_embedded_length() {
-        let path = cached_sound_path(SoundAsset::ButtonClick);
-        ensure_embedded_sound(SoundAsset::ButtonClick, &path)
-            .expect("embedded click sound should be written");
-
-        assert_eq!(
-            path.metadata()
-                .expect("materialized sound should exist")
-                .len(),
-            SoundAsset::ButtonClick.bytes().len() as u64
-        );
-    }
-
-    #[test]
-    fn every_embedded_sound_asset_has_bytes_and_a_cache_path() {
+    fn every_embedded_sound_asset_has_bytes() {
         for sound in all_assets() {
-            let path = cached_sound_path(sound);
-            assert!(path.starts_with(std::env::temp_dir()));
-            assert_eq!(
-                path.file_name(),
-                Some(std::ffi::OsStr::new(sound.file_name()))
-            );
-            assert!(
-                !sound.bytes().is_empty(),
-                "asset {} should not be empty",
-                sound.file_name()
-            );
+            assert!(!sound.bytes().is_empty());
         }
     }
 
     #[test]
-    fn every_embedded_sound_asset_can_be_materialized() {
+    fn every_embedded_sound_asset_can_be_decoded() {
         for sound in all_assets() {
-            let path = sound_path(sound).unwrap_or_else(|| PathBuf::from(sound.file_name()));
-            assert!(
-                path.exists(),
-                "{} should be written to disk",
-                sound.file_name()
-            );
-            assert_eq!(
-                path.metadata()
-                    .expect("materialized sound should exist")
-                    .len(),
-                sound.bytes().len() as u64
-            );
+            let source = sound_decoder(sound);
+            assert!(source.is_some(), "sound asset should decode");
         }
     }
 
     #[test]
-    fn looping_audio_stop_is_safe_without_an_active_child() {
-        let mut looping = LoopingAudio::default();
-        looping.stop();
-        assert!(looping.stop.is_none());
+    fn looping_sound_assets_can_be_created_from_embedded_bytes() {
+        assert!(looping_sound_decoder(SoundAsset::Music).is_some());
+        assert!(looping_sound_decoder(SoundAsset::FreightMode).is_some());
     }
 }

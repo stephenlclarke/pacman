@@ -1,6 +1,6 @@
 [package]
 name = "pacman"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 autobins = false
 default-run = "pacman"
@@ -16,6 +16,7 @@ crossterm = "0.29"
 fastrand = "2.3"
 libc = "0.2"
 png = "0.18"
+rodio = "0.21"
 
 [dev-dependencies]
 gif = "0.13"

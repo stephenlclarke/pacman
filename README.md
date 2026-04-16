@@ -1,6 +1,5 @@
 # PacMan
 
-
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=bugs)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
 [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
@@ -19,9 +18,7 @@ This is a rust implmentation of Pacman rendered with Kitty graphics.
 
 ![PacMan](docs/pacman.png)
 
-<p align="center">
-  <img src="docs/start-sequence.gif" alt="Start Sequence" />
-</p>
+![Start Sequence](docs/start-sequence.gif)
 
 Run targets:
 
@@ -87,3 +84,28 @@ ROMs into native Rust rather than emulating the Z80 code directly:
 - [Pac-Man Emulation Guide](https://www.lomont.org/software/games/pacman/PacmanEmulation.pdf):
   hardware-oriented reference for palettes, video layout, sprite ordering, and
   general ROM structure.
+
+## Platform Support
+
+Sound effects and music are embedded in the binary and played in-process using
+`rodio` on top of `cpal`. That removes the previous dependency on a
+platform-specific command such as `/usr/bin/afplay` and makes the audio path
+portable across macOS and Linux.
+
+macOS is still the only platform that has been actively validated. Most of the
+rendering and terminal code is already Unix-oriented, and the audio layer no
+longer needs a separate Linux backend, but Linux support has not been tested
+end to end yet.
+
+To finish Linux support, the remaining work is:
+
+- Verify Kitty graphics protocol support and terminal pixel sizing on Linux
+  terminals such as Kitty and Ghostty, since rendering depends on a compatible
+  terminal and `ioctl(TIOCGWINSZ)` reporting usable pixel dimensions.
+- Run the game on real Linux machines or CI runners to confirm that `rodio` can
+  open the default audio device cleanly on ALSA, PulseAudio, or PipeWire-backed
+  setups.
+- Add Linux-specific install notes for terminal choice, audio stack quirks, and
+  any distro packages needed for building or running the app.
+- Expand the test and release matrix so Linux builds and smoke tests are kept
+  healthy going forward.
