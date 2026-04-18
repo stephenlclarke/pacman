@@ -113,6 +113,153 @@ ROMs into native Rust rather than emulating the Z80 code directly:
   hardware-oriented reference for palettes, video layout, sprite ordering, and
   general ROM structure.
 
+## Customisation
+
+Arcade defaults ship in `assets/arcade/`. Copy the files you want to change
+into `~/.xyzzy/pacman/` to override them locally. Key/value files are merged on
+top of the embedded defaults, so you only need to include the keys you want to
+change. Layout files are replaced whole. If `PACMAN_DATA_DIR` is set, the game
+reads these files from that directory instead.
+
+### `arcade-rules.txt`
+
+`difficulty_entries`
+Default:
+
+```text
+3,1,1,0,2,0;4,1,2,1,3,0;4,1,3,2,4,1;4,2,3,2,5,1;5,0,3,2,6,2;
+5,1,3,3,3,2;5,2,3,3,6,2;5,2,3,3,6,2;5,0,3,4,7,2;5,1,3,4,3,2;
+5,2,3,4,6,2;5,2,3,5,7,2;5,0,3,5,7,2;5,2,3,5,5,2;5,1,3,6,7,2;
+5,2,3,6,7,2;5,2,3,6,8,2;5,2,3,6,7,2;5,2,3,7,8,2;5,2,3,7,8,2;
+6,2,3,7,8,2
+```
+
+Meaning: per-level lookup table selecting movement, phase, dot-release,
+frightened-time, and timer groups.
+
+`personal_dot_groups`
+Default: `20,30,70;0,30,60;0,0,50;0,0,0`
+Meaning: Pinky, Inky, and Clyde personal dot-release thresholds by group.
+
+`elroy_dot_groups`
+Default: `20,10;30,15;40,20;50,25;60,30;80,40;100,50;120,60`
+Meaning: Blinky’s Cruise Elroy pellet thresholds by group.
+
+`frightened_timer_ticks`
+Default: `960,840,720,600,480,360,240,120,1`
+Meaning: frightened-mode durations in original 120 Hz timer ticks.
+
+`release_timer_frames`
+Default: `240,240,180`
+Meaning: ghost-house inactivity release timers in video frames.
+
+`move_pattern_groups`
+Default:
+
+```text
+0x552a552a,0x55555555,0x552a552a,0x524aa594,0x25252525,0x22222222,0x01010101;
+0x524aa594,0xaa2a5555,0x552a552a,0x524aa594,0x92242549,0x48242291,0x01010101;
+0x552a552a,0x55555555,0xaa2a5555,0x552a552a,0x524aa594,0x48242291,0x21444408;
+0x55555555,0xd56ad56a,0xaa6a55d5,0x55555555,0xaa2a5555,0x92249224,0x22222222;
+0xd56ad56a,0xd65aadb5,0xd65aadb5,0xd56ad56a,0xaa6a55d5,0x92242549,0x48242291;
+0x6d6d6d6d,0x6d6d6d6d,0xb66d6ddb,0x6d6d6d6d,0xd65aadb5,0x25252525,0x92249224;
+0xd56ad56a,0xd56ad56a,0xb66d6ddb,0x6d6d6d6d,0xd65aadb5,0x48242291,0x92249224
+```
+
+Meaning: 32-step movement bit patterns for Pac-Man, ghosts, tunnels,
+frightened mode, and Elroy speeds.
+
+`phase_change_frames`
+Default:
+
+```text
+600,1800,2400,3600,4200,6000,6420;0,0,0,0,0,0,0;600,2100,2520,4020,4440,5640,5940;
+420,1620,2040,3240,3540,4740,5040;420,1620,2040,3240,3540,65534,65535;
+300,1500,1800,3000,3300,65534,65535;300,1500,1800,3000,3300,65534,65535
+```
+
+Meaning: scatter/chase schedule tables in video frames by difficulty group.
+
+`fruit_points`
+Default:
+`100,300,500,500,700,700,1000,1000,2000,2000,3000,3000,5000,5000,5000,5000,5000,5000,5000,5000,5000`
+Meaning: bonus-fruit score values by level.
+
+`fruit_reset_timer`
+Default: `138`
+Meaning: encoded arcade timer byte controlling fruit lifetime on the maze.
+
+`fruit_release_dots`
+Default: `70,170`
+Meaning: dot counts that spawn the first and second fruits.
+
+`global_release_dots`
+Default: `7,17,32`
+Meaning: global dot thresholds that release Pinky, Inky, and Clyde when the
+timer path is active.
+
+### `maze-metadata.txt`
+
+`portal_pair`
+Default: `0,17|27,17`
+Meaning: left/right tunnel pair used for wraparound travel.
+
+`home_offset`
+Default: `11.5,14.0`
+Meaning: top-left offset of the ghost house within maze tile coordinates.
+
+`home_connect_left`
+Default: `12,14`
+Meaning: left entrance tile that connects the ghost house to the maze graph.
+
+`home_connect_right`
+Default: `15,14`
+Meaning: right entrance tile that connects the ghost house to the maze graph.
+
+`blinky_start_pixels`
+Default: `216,224`
+Meaning: Blinky’s sprite start position in original screen pixels.
+
+`pinky_start_pixels`
+Default: `216,272`
+Meaning: Pinky’s sprite start position in original screen pixels.
+
+`inky_start_pixels`
+Default: `184,272`
+Meaning: Inky’s sprite start position in original screen pixels.
+
+`clyde_start_pixels`
+Default: `248,272`
+Meaning: Clyde’s sprite start position in original screen pixels.
+
+`pacman_start`
+Default: `15,26`
+Meaning: Pac-Man’s starting tile coordinate.
+
+`fruit_start`
+Default: `15,23`
+Meaning: fruit spawn tile coordinate.
+
+`pacman_start_pixels`
+Default: `216,416`
+Meaning: Pac-Man’s sprite start position in original screen pixels.
+
+`fruit_start_pixels`
+Default: `216,320`
+Meaning: fruit sprite position in original screen pixels.
+
+`ghost_deny_up`
+Default: `12,14;15,14;12,26;15,26`
+Meaning: tile positions where upward ghost turns are blocked to match arcade
+pathing.
+
+### `maze-logic.txt`
+
+This file is a whole-layout override rather than a partial key/value merge. If
+`~/.xyzzy/pacman/maze-logic.txt` exists, it fully replaces the embedded maze
+tile map. The default file is the 36-row Midway maze layout shipped in
+`assets/arcade/maze-logic.txt`.
+
 ## Platform Support
 
 Sound effects and music are embedded in the binary and played in-process using

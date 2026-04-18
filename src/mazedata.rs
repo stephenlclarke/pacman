@@ -1,5 +1,8 @@
 //! Loads the embedded arcade maze metadata and exposes the runtime maze specification.
 
+use std::sync::OnceLock;
+
+use crate::customization;
 use crate::{actors::GhostKind, pacman::Direction};
 
 type TilePosition = (f32, f32);
@@ -79,7 +82,7 @@ impl MazeSpec {
 fn arcade_maze() -> MazeSpec {
     let metadata = arcade_maze_metadata();
     MazeSpec {
-        layout: ARCADE_MAZE_LAYOUT,
+        layout: arcade_maze_layout(),
         portal_pairs: [metadata.portal_pair],
         home_offset: metadata.home_offset,
         home_connect_left: metadata.home_connect_left,
@@ -94,6 +97,13 @@ fn arcade_maze() -> MazeSpec {
         fruit_start_pixels: metadata.fruit_start_pixels,
         ghost_deny_up: metadata.ghost_deny_up,
     }
+}
+
+fn arcade_maze_layout() -> &'static str {
+    static LAYOUT: OnceLock<String> = OnceLock::new();
+    LAYOUT
+        .get_or_init(|| customization::load_arcade_text("maze-logic.txt", ARCADE_MAZE_LAYOUT))
+        .as_str()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -114,7 +124,11 @@ struct MazeMetadata {
 }
 
 fn arcade_maze_metadata() -> MazeMetadata {
-    parse_maze_metadata(ARCADE_MAZE_METADATA)
+    static METADATA: OnceLock<MazeMetadata> = OnceLock::new();
+    *METADATA.get_or_init(|| {
+        let metadata = customization::load_arcade_text("maze-metadata.txt", ARCADE_MAZE_METADATA);
+        parse_maze_metadata(&metadata)
+    })
 }
 
 /// Parses maze metadata.

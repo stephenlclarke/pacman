@@ -3,6 +3,7 @@
 use std::sync::OnceLock;
 
 use crate::actors::GhostKind;
+use crate::customization;
 
 const ORIGINAL_FPS: f32 = 60.606_06;
 pub const ORIGINAL_FRAME_TIME: f32 = 1.0 / ORIGINAL_FPS;
@@ -187,7 +188,10 @@ pub fn dot_pause_seconds(power_pellet: bool) -> f32 {
 
 fn arcade_rule_tables() -> &'static ArcadeRuleTables {
     static TABLES: OnceLock<ArcadeRuleTables> = OnceLock::new();
-    TABLES.get_or_init(|| parse_arcade_rule_tables(ARCADE_RULES))
+    TABLES.get_or_init(|| {
+        let rules = customization::load_arcade_text("arcade-rules.txt", ARCADE_RULES);
+        parse_arcade_rule_tables(&rules)
+    })
 }
 
 fn difficulty_entry(level: u32) -> [u8; 6] {

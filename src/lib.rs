@@ -7,6 +7,7 @@ pub mod arcade;
 pub mod audio;
 pub mod autopilot;
 pub mod constants;
+mod customization;
 pub mod fruit;
 pub mod game;
 pub mod ghosts;
