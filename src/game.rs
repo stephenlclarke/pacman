@@ -15,6 +15,7 @@ use crate::{
     },
     fruit::Fruit,
     ghosts::{GhostGroup, GhostGroupUpdateContext},
+    high_scores::HighScoreTable,
     mazedata::MazeSpec,
     modes::GhostMode,
     nodes::NodeGroup,
@@ -123,6 +124,7 @@ struct GameplayState {
     level: u32,
     lives: u32,
     score: u32,
+    high_score: u32,
     pacman_pause_remaining: f32,
     fruit_thresholds_spawned: [bool; 2],
     personal_dot_counters: [usize; 4],
@@ -179,6 +181,7 @@ struct TitleScreenState {
     prompt_blink_timer: f32,
     prompt_visible: bool,
     title_image: Arc<RenderedImage>,
+    high_score_image: Arc<RenderedImage>,
     company_image: Arc<RenderedImage>,
     bonus_image: Arc<RenderedImage>,
     push_start_image: Arc<RenderedImage>,
@@ -216,6 +219,8 @@ struct AttractNicknameRow {
 struct AppState {
     title_screen: TitleScreenState,
     gameplay: Option<GameplayState>,
+    high_scores: HighScoreTable,
+    persist_high_scores: bool,
     events: Vec<GameEvent>,
 }
 
@@ -223,6 +228,13 @@ impl Game {
     pub fn new() -> Self {
         Self {
             state: AppState::new(),
+            quit_requested: false,
+        }
+    }
+
+    pub fn load() -> Self {
+        Self {
+            state: AppState::load(),
             quit_requested: false,
         }
     }
@@ -403,11 +415,26 @@ impl GameplayState {
     const READY_TIME: f32 = 3.0;
 
     fn new() -> Self {
-        Self::start_level(1, 5, 0, Vec::new())
+        Self::with_high_score(0)
     }
 
+    fn with_high_score(high_score: u32) -> Self {
+        Self::start_level_with_high_score(1, 5, 0, Vec::new(), high_score)
+    }
+
+    #[cfg(test)]
     /// Starts level.
     fn start_level(level: u32, lives: u32, score: u32, fruit_captured: Vec<usize>) -> Self {
+        Self::start_level_with_high_score(level, lives, score, fruit_captured, 0)
+    }
+
+    fn start_level_with_high_score(
+        level: u32,
+        lives: u32,
+        score: u32,
+        fruit_captured: Vec<usize>,
+        high_score: u32,
+    ) -> Self {
         let maze_spec = MazeSpec::arcade();
         let (nodes, pacman, pellets, ghosts) = build_gameplay_level(maze_spec, level);
         let maze_sprites = MazeSprites::from_layout(maze_spec.layout);
@@ -416,6 +443,7 @@ impl GameplayState {
 
         let mut text_group = TextGroup::new();
         text_group.update_score(score);
+        text_group.update_high_score(high_score.max(score));
         text_group.update_level(level);
         text_group.show_status(StatusText::Ready);
 
@@ -429,6 +457,7 @@ impl GameplayState {
             level,
             lives,
             score,
+            high_score: high_score.max(score),
             pacman_pause_remaining: 0.0,
             fruit_thresholds_spawned: [false; 2],
             personal_dot_counters: [0; 4],
@@ -976,11 +1005,24 @@ impl GameplayState {
     fn update_score(&mut self, points: u32) {
         self.score += points;
         self.text_group.update_score(self.score);
+        self.sync_high_score();
     }
 
     /// Updates score headless.
     fn update_score_headless(&mut self, points: u32) {
         self.score += points;
+        self.sync_high_score();
+    }
+
+    fn sync_high_score(&mut self) {
+        if self.score > self.high_score {
+            self.high_score = self.score;
+            self.text_group.update_high_score(self.high_score);
+        }
+    }
+
+    fn high_score(&self) -> u32 {
+        self.high_score.max(self.score)
     }
 
     /// Checks pellet events.
@@ -1242,11 +1284,12 @@ impl GameplayState {
             GameplayAction::ResetLevel => self.reset_level(),
             GameplayAction::NextLevel => {
                 let flags = self.secret_mode_flags();
-                *self = Self::start_level(
+                *self = Self::start_level_with_high_score(
                     self.level + 1,
                     self.lives,
                     self.score,
                     self.fruit_captured.clone(),
+                    self.high_score,
                 );
                 self.apply_secret_mode_flags(flags);
             }
@@ -1262,11 +1305,12 @@ impl GameplayState {
             GameplayAction::ResetLevel => self.reset_level_headless(),
             GameplayAction::NextLevel => {
                 let flags = self.secret_mode_flags();
-                *self = Self::start_level(
+                *self = Self::start_level_with_high_score(
                     self.level + 1,
                     self.lives,
                     self.score,
                     self.fruit_captured.clone(),
+                    self.high_score,
                 );
                 self.apply_secret_mode_flags(flags);
                 self.pause.set_paused(false);
@@ -1540,13 +1584,23 @@ impl TitleAttractScene {
 }
 
 impl TitleScreenState {
+    #[cfg(test)]
     fn new() -> Self {
+        Self::with_high_score(0)
+    }
+
+    fn with_high_score(high_score: u32) -> Self {
         Self {
             scene: TitleAttractScene::Title,
             scene_timer: 0.0,
             prompt_blink_timer: 0.0,
             prompt_visible: true,
             title_image: rasterize_text_image("PACMAN", YELLOW, 64.0),
+            high_score_image: rasterize_text_image(
+                &format!("HIGH SCORE {high_score:08}"),
+                WHITE,
+                16.0,
+            ),
             company_image: rasterize_text_image("1980 MIDWAY MFG CO", WHITE, 16.0),
             bonus_image: rasterize_text_image("BONUS PACMAN FOR 10000 PTS", WHITE, 16.0),
             push_start_image: rasterize_text_image("PUSH START BUTTON", YELLOW, 16.0),
@@ -1680,6 +1734,7 @@ impl TitleScreenState {
     /// Appends title scene.
     fn append_title_scene(&self, frame: &mut FrameData) {
         append_centered_text(frame, &self.title_image, 68.0);
+        append_centered_text(frame, &self.high_score_image, 136.0);
         append_centered_text(frame, &self.company_image, 168.0);
         append_centered_text(frame, &self.bonus_image, 204.0);
         if self.prompt_visible {
@@ -1825,9 +1880,19 @@ fn append_actor_sprite(frame: &mut FrameData, image: Arc<RenderedImage>, center:
 
 impl AppState {
     fn new() -> Self {
+        Self::with_high_scores(HighScoreTable::default(), false)
+    }
+
+    fn load() -> Self {
+        Self::with_high_scores(HighScoreTable::load_default(), true)
+    }
+
+    fn with_high_scores(high_scores: HighScoreTable, persist_high_scores: bool) -> Self {
         Self {
-            title_screen: TitleScreenState::new(),
+            title_screen: TitleScreenState::with_high_score(high_scores.top_score()),
             gameplay: None,
+            high_scores,
+            persist_high_scores,
             events: vec![GameEvent::TitleScreenEntered],
         }
     }
@@ -1840,11 +1905,15 @@ impl AppState {
                 input.pause_requested,
                 &input.typed_chars,
             );
+            let high_score_changed = self.high_scores.record(gameplay.high_score());
+            if high_score_changed && self.persist_high_scores {
+                let _ = self.high_scores.save_default();
+            }
             self.events.extend(gameplay.drain_events());
 
             if gameplay.return_to_title_requested {
                 self.gameplay = None;
-                self.title_screen = TitleScreenState::new();
+                self.title_screen = TitleScreenState::with_high_score(self.high_scores.top_score());
                 self.events.push(GameEvent::TitleScreenEntered);
             }
             return;
@@ -1863,7 +1932,7 @@ impl AppState {
         }
 
         if should_start {
-            self.gameplay = Some(GameplayState::new());
+            self.gameplay = Some(GameplayState::with_high_score(self.high_scores.top_score()));
             self.events.push(GameEvent::GameStarted);
         }
     }

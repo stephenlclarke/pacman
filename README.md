@@ -61,6 +61,8 @@ Notes:
   the Kitty graphics protocol.
 - Download Ghostty: <https://ghostty.org/download>
 - Download Warp: <https://www.warp.dev/download>
+- The top score now persists between runs in `~/.pacman/high_score.txt`; set
+  `PACMAN_DATA_DIR` to redirect that file for local experiments or tests.
 - If `pacman` is not found after installation, ensure `~/.cargo/bin` is on your
   `PATH`.
 

@@ -38,7 +38,7 @@ pub fn run() -> Result<()> {
     let mut renderer = Renderer::new(terminal_geometry);
     let mut graphics = KittyGraphics::new(terminal_geometry.cols, terminal_geometry.rows);
     let mut input = InputController::default();
-    let mut game = Game::new();
+    let mut game = Game::load();
     let mut audio = AudioManager::new();
     for event in game.drain_events() {
         audio.handle_event(event);

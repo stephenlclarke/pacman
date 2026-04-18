@@ -48,11 +48,13 @@ struct TextItem {
 #[derive(Clone, Debug)]
 pub struct TextGroup {
     score_value: TextItem,
+    high_score_value: TextItem,
     level_value: TextItem,
     ready: TextItem,
     paused: TextItem,
     game_over: TextItem,
     score_label: TextItem,
+    high_score_label: TextItem,
     level_label: TextItem,
     transient: Vec<TextItem>,
 }
@@ -62,6 +64,14 @@ impl TextGroup {
         let size = TILE_HEIGHT as f32;
         let mut group = Self {
             score_value: TextItem::new("00000000", WHITE, 0.0, TILE_HEIGHT as f32, size, true),
+            high_score_value: TextItem::new(
+                "00000000",
+                WHITE,
+                10.0 * TILE_WIDTH as f32,
+                TILE_HEIGHT as f32,
+                size,
+                true,
+            ),
             level_value: TextItem::new(
                 "001",
                 WHITE,
@@ -95,6 +105,14 @@ impl TextGroup {
                 false,
             ),
             score_label: TextItem::new("SCORE", WHITE, 0.0, 0.0, size, true),
+            high_score_label: TextItem::new(
+                "HIGH SCORE",
+                WHITE,
+                9.0 * TILE_WIDTH as f32,
+                0.0,
+                size,
+                true,
+            ),
             level_label: TextItem::new("LEVEL", WHITE, 23.0 * TILE_WIDTH as f32, 0.0, size, true),
             transient: Vec::new(),
         };
@@ -130,6 +148,10 @@ impl TextGroup {
         self.score_value.set_text(format!("{score:08}"));
     }
 
+    pub fn update_high_score(&mut self, score: u32) {
+        self.high_score_value.set_text(format!("{score:08}"));
+    }
+
     /// Updates level.
     pub fn update_level(&mut self, level: u32) {
         self.level_value.set_text(format!("{level:03}"));
@@ -144,8 +166,10 @@ impl TextGroup {
     pub fn append_renderables(&self, frame: &mut FrameData) {
         for text in [
             &self.score_value,
+            &self.high_score_value,
             &self.level_value,
             &self.score_label,
+            &self.high_score_label,
             &self.level_label,
             &self.ready,
             &self.paused,

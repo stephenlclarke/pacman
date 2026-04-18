@@ -10,6 +10,7 @@ pub mod constants;
 pub mod fruit;
 pub mod game;
 pub mod ghosts;
+pub mod high_scores;
 pub mod input;
 pub mod kitty;
 pub mod mazedata;
