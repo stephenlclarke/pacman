@@ -68,14 +68,19 @@ impl HighScoreTable {
 
 pub fn default_storage_path() -> PathBuf {
     if let Some(path) = env::var_os("PACMAN_DATA_DIR") {
-        return PathBuf::from(path).join("high_score.txt");
+        return PathBuf::from(path).join("high_scores.txt");
     }
 
     if let Some(home) = env::var_os("HOME") {
-        return PathBuf::from(home).join(".pacman").join("high_score.txt");
+        return PathBuf::from(home)
+            .join(".xyzzy")
+            .join("pacman")
+            .join("high_scores.txt");
     }
 
-    PathBuf::from(".pacman-high-score.txt")
+    PathBuf::from(".xyzzy")
+        .join("pacman")
+        .join("high_scores.txt")
 }
 
 #[cfg(test)]
@@ -127,7 +132,7 @@ mod tests {
     #[test]
     fn save_and_load_round_trip_the_top_score() {
         let dir = TempDir::new();
-        let path = dir.path().join("high_score.txt");
+        let path = dir.path().join("high_scores.txt");
         let mut table = HighScoreTable::default();
         table.record(23_450);
 
@@ -158,7 +163,7 @@ mod tests {
             std::env::set_var("PACMAN_DATA_DIR", &override_path);
         }
         let path = default_storage_path();
-        assert_eq!(path, override_path.join("high_score.txt"));
+        assert_eq!(path, override_path.join("high_scores.txt"));
 
         // SAFETY: This test sets process environment variables and restores them before exit.
         unsafe {
@@ -168,7 +173,7 @@ mod tests {
         let path = default_storage_path();
         assert_eq!(
             path,
-            PathBuf::from("/tmp/pacman-home/.pacman/high_score.txt")
+            PathBuf::from("/tmp/pacman-home/.xyzzy/pacman/high_scores.txt")
         );
 
         // SAFETY: This test restores process environment variables modified above.
