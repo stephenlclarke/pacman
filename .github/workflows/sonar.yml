@@ -42,9 +42,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Generate coverage report
-        run: |
-          mkdir -p target/coverage
-          cargo llvm-cov --all-targets --workspace --cobertura --output-path target/coverage/coverage.xml
+        run: make sq-ci
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7
