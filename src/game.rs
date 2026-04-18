@@ -229,7 +229,10 @@ impl Game {
 
     /// Updates with input.
     pub fn update_with_input(&mut self, dt: f32, input: UpdateInput) {
-        let q_pressed = input.typed_chars.contains(&'q');
+        let q_pressed = input
+            .typed_chars
+            .iter()
+            .any(|character| character.eq_ignore_ascii_case(&'q'));
         self.state.update(dt, &input);
 
         if q_pressed {
@@ -661,6 +664,7 @@ impl GameplayState {
 
     fn handle_easter_egg_input(&mut self, typed_chars: &[char]) {
         for &character in typed_chars {
+            let character = character.to_ascii_lowercase();
             let is_secret_code_input = self.update_easter_egg_sequence(character);
 
             if !self.easter_egg_active {
@@ -2205,7 +2209,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['q'],
+                typed_chars: vec!['Q'],
                 ..UpdateInput::default()
             },
         );
@@ -2222,7 +2226,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['x', 'y', 'z', 'z', 'y'],
+                typed_chars: vec!['X', 'Y', 'Z', 'Z', 'Y'],
                 ..UpdateInput::default()
             },
         );
@@ -2232,7 +2236,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['q'],
+                typed_chars: vec!['Q'],
                 ..UpdateInput::default()
             },
         );
@@ -2244,7 +2248,7 @@ mod tests {
     fn xyzzy_toggles_secret_mode_and_starts_blink_feedback() {
         let mut state = GameplayState::new();
 
-        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+        state.handle_easter_egg_input(&['X', 'Y', 'Z', 'Z', 'Y']);
 
         assert!(state.easter_egg_active);
         assert_eq!(
@@ -2252,7 +2256,7 @@ mod tests {
             BlinkFeedback::TOGGLES
         );
 
-        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+        state.handle_easter_egg_input(&['X', 'Y', 'Z', 'Z', 'Y']);
 
         assert!(!state.easter_egg_active);
         assert_eq!(
@@ -2265,17 +2269,17 @@ mod tests {
     fn secret_a_toggles_autopilot_and_secret_mode_off_disables_it() {
         let mut state = GameplayState::new();
 
-        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
-        state.handle_easter_egg_input(&['a']);
+        state.handle_easter_egg_input(&['X', 'Y', 'Z', 'Z', 'Y']);
+        state.handle_easter_egg_input(&['A']);
         assert!(state.easter_egg_autopilot.active());
 
-        state.handle_easter_egg_input(&['a']);
+        state.handle_easter_egg_input(&['A']);
         assert!(!state.easter_egg_autopilot.active());
 
-        state.handle_easter_egg_input(&['a']);
+        state.handle_easter_egg_input(&['A']);
         assert!(state.easter_egg_autopilot.active());
 
-        state.handle_easter_egg_input(&['x', 'y', 'z', 'z', 'y']);
+        state.handle_easter_egg_input(&['X', 'Y', 'Z', 'Z', 'Y']);
         assert!(!state.easter_egg_active);
         assert!(!state.easter_egg_autopilot.active());
     }
@@ -2289,7 +2293,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['x', 'y', 'z', 'z', 'y'],
+                typed_chars: vec!['X', 'Y', 'Z', 'Z', 'Y'],
                 ..UpdateInput::default()
             },
         );
@@ -2299,7 +2303,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['f'],
+                typed_chars: vec!['F'],
                 ..UpdateInput::default()
             },
         );
@@ -2317,7 +2321,7 @@ mod tests {
             0.0,
             UpdateInput {
                 requested_direction: Direction::Stop,
-                typed_chars: vec!['f'],
+                typed_chars: vec!['F'],
                 ..UpdateInput::default()
             },
         );

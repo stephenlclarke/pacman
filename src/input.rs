@@ -262,11 +262,26 @@ mod tests {
     #[test]
     fn q_is_exposed_as_a_typed_character_instead_of_an_immediate_quit() {
         let mut input = InputController::default();
-        let mut key_event = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        let mut key_event = KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT);
         key_event.kind = KeyEventKind::Press;
         input.handle_key(key_event);
 
         assert_eq!(input.take_typed_chars(), vec!['q']);
         assert!(!input.quit_requested());
+    }
+
+    #[test]
+    fn uppercase_direction_keys_match_lowercase_mappings() {
+        let mut input = InputController::default();
+
+        let mut key_event = KeyEvent::new(KeyCode::Char('W'), KeyModifiers::SHIFT);
+        key_event.kind = KeyEventKind::Press;
+        input.handle_key(key_event);
+        assert_eq!(input.direction(), Direction::Up);
+
+        let mut key_event = KeyEvent::new(KeyCode::Char('D'), KeyModifiers::SHIFT);
+        key_event.kind = KeyEventKind::Press;
+        input.handle_key(key_event);
+        assert_eq!(input.direction(), Direction::Right);
     }
 }
