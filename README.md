@@ -28,9 +28,12 @@ This is a rust implmentation of Pacman rendered with Kitty graphics.
 Run targets:
 
 - `cargo run`
+- `make run`
 - `cargo test`
 - `cargo fmt --check`
 - `cargo clippy --all-targets -- -D warnings`
+- `make ci`
+- `make coverage`
 - `make sq-ci`
 - `make sq`
 - `cargo run --example generate_start_sequence_gif`
