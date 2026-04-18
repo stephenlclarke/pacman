@@ -87,8 +87,8 @@ Extra keys while `xyzzy` mode is active:
   pellets until they are useful. Autopilot turns off automatically when the
   level has no pellets left.
 - `F`: toggle forced freight mode for the ghosts.
-- `T`: teleport Pacman to the safest valid node on the map.
 - `R`: reset all ghosts back to their starting positions.
+- `T`: teleport Pacman to the safest valid node on the map.
 
 ## ROM References
 
