@@ -55,6 +55,14 @@ After installation, run the game with:
 
 - `pacman`
 
+Version tags such as `v1.0.0` also publish prebuilt GitHub Release binaries for:
+
+- Linux `x86_64`
+- Linux `arm64`
+- Windows `x86_64`
+- macOS `arm64`
+- A `pacman-<tag>-SHA256SUMS.txt` manifest for the released assets
+
 Notes:
 
 - Run it inside `kitty`, `ghostty`, `warp`, or another terminal that supports

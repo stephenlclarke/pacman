@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary_name: pacman
+            asset_ext: tar.gz
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            binary_name: pacman
+            asset_ext: tar.gz
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary_name: pacman.exe
+            asset_ext: exe
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            binary_name: pacman
+            asset_ext: tar.gz
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --locked --release --bin pacman --target ${{ matrix.target }}
+
+      - name: Compute asset name
+        id: asset
+        shell: bash
+        run: echo "name=pacman-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.asset_ext }}" >> "$GITHUB_OUTPUT"
+
+      - name: Package Unix archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          tar -C "target/${{ matrix.target }}/release" -czf "dist/${{ steps.asset.outputs.name }}" "${{ matrix.binary_name }}"
+
+      - name: Package Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target\${{ matrix.target }}\release\${{ matrix.binary_name }}" "dist\${{ steps.asset.outputs.name }}"
+
+      - name: Upload packaged binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.asset.outputs.name }}
+          path: dist/${{ steps.asset.outputs.name }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs: build
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download packaged binaries
+        uses: actions/download-artifact@v5
+        with:
+          path: dist
+
+      - name: Create or update release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          mapfile -t assets < <(find dist -type f | sort)
+
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets were downloaded" >&2
+            exit 1
+          fi
+
+          checksum_file="dist/pacman-${tag}-SHA256SUMS.txt"
+          : > "$checksum_file"
+          for asset in "${assets[@]}"; do
+            printf "%s  %s\n" "$(sha256sum "$asset" | cut -d' ' -f1)" "$(basename "$asset")" >> "$checksum_file"
+          done
+          assets+=("$checksum_file")
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --verify-tag --generate-notes
+          fi

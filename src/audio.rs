@@ -41,15 +41,15 @@ impl Default for AudioManager {
 impl SoundAsset {
     const fn bytes(self) -> &'static [u8] {
         match self {
-            Self::ButtonClick => include_bytes!("../assets/Sounds/button_click.ogg"),
-            Self::Death => include_bytes!("../assets/Sounds/death.wav"),
-            Self::FreightMode => include_bytes!("../assets/Sounds/fright_mode_short.wav"),
-            Self::FruitEat => include_bytes!("../assets/Sounds/fruit_eat.wav"),
-            Self::GhostEat => include_bytes!("../assets/Sounds/ghost_eat.wav"),
-            Self::LevelComplete => include_bytes!("../assets/Sounds/level_complete.wav"),
-            Self::LevelStart => include_bytes!("../assets/Sounds/level_start.wav"),
-            Self::Music => include_bytes!("../assets/Sounds/music.ogg"),
-            Self::SmallPellet => include_bytes!("../assets/Sounds/small_pellet2.wav"),
+            Self::ButtonClick => include_bytes!("../assets/sounds/button_click.ogg"),
+            Self::Death => include_bytes!("../assets/sounds/death.wav"),
+            Self::FreightMode => include_bytes!("../assets/sounds/fright_mode_short.wav"),
+            Self::FruitEat => include_bytes!("../assets/sounds/fruit_eat.wav"),
+            Self::GhostEat => include_bytes!("../assets/sounds/ghost_eat.wav"),
+            Self::LevelComplete => include_bytes!("../assets/sounds/level_complete.wav"),
+            Self::LevelStart => include_bytes!("../assets/sounds/level_start.wav"),
+            Self::Music => include_bytes!("../assets/sounds/music.ogg"),
+            Self::SmallPellet => include_bytes!("../assets/sounds/small_pellet2.wav"),
         }
     }
 }
