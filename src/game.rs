@@ -113,7 +113,7 @@ pub struct Game {
     quit_requested: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct GameplayState {
     nodes: NodeGroup,
     pacman: NodePacman,
@@ -162,7 +162,7 @@ struct BlinkFeedback {
     visible: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct TitleButtonState {
     position: Vector2,
     size: Vector2,
@@ -174,7 +174,7 @@ struct TitleButtonState {
     pressed: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct TitleScreenState {
     scene: TitleAttractScene,
     scene_timer: f32,
@@ -208,14 +208,14 @@ enum TitleAttractScene {
     Nicknames,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct AttractNicknameRow {
     kind: GhostKind,
     nickname_image: Arc<RenderedImage>,
     name_image: Arc<RenderedImage>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct AppState {
     title_screen: TitleScreenState,
     gameplay: Option<GameplayState>,

@@ -1,8 +1,13 @@
 //! Loads embedded sprite assets and exposes animation helpers for the arcade visuals.
 
 use std::{
+    fmt,
     io::Cursor,
-    sync::{Arc, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock, mpsc,
+        mpsc::{Receiver, Sender},
+    },
+    thread::{self, JoinHandle},
 };
 
 use anyhow::Context;
@@ -35,8 +40,12 @@ struct ArcadeActorAssets {
     fruit_icons: [Arc<RenderedImage>; 8],
 }
 
-#[derive(Clone, Debug)]
 pub struct PacmanSprites {
+    worker: SpriteWorker<PacmanSpriteCommand>,
+    current: Arc<RenderedImage>,
+}
+
+struct PacmanSpriteController {
     left: Arc<RenderedImage>,
     right: Arc<RenderedImage>,
     up: Arc<RenderedImage>,
@@ -48,18 +57,27 @@ pub struct PacmanSprites {
     stop_up: Arc<RenderedImage>,
     stop_down: Arc<RenderedImage>,
     stop_image: Arc<RenderedImage>,
-    current: Arc<RenderedImage>,
     chomp_dt: f32,
     chomp_open: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
+struct PacmanSpriteCommand {
+    dt: f32,
+    direction: Direction,
+    alive: bool,
+}
+
 pub struct GhostSprites {
-    start: [Arc<RenderedImage>; 4],
-    up: [Arc<RenderedImage>; 4],
-    down: [Arc<RenderedImage>; 4],
-    left: [Arc<RenderedImage>; 4],
-    right: [Arc<RenderedImage>; 4],
+    ghosts: [SpriteWorker<GhostSpriteCommand>; 4],
+}
+
+struct GhostSpriteController {
+    start: Arc<RenderedImage>,
+    up: Arc<RenderedImage>,
+    down: Arc<RenderedImage>,
+    left: Arc<RenderedImage>,
+    right: Arc<RenderedImage>,
     spawn_up: Arc<RenderedImage>,
     spawn_down: Arc<RenderedImage>,
     spawn_left: Arc<RenderedImage>,
@@ -68,10 +86,27 @@ pub struct GhostSprites {
     freight_flash: [Arc<RenderedImage>; 2],
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
+struct GhostSpriteCommand {
+    mode: GhostMode,
+    direction: Direction,
+    freight_remaining: Option<f32>,
+    fright_total_duration: Option<f32>,
+}
+
 pub struct FruitSprites {
+    worker: SpriteWorker<FruitSpriteCommand>,
+}
+
+struct FruitSpriteController {
     items: [Arc<RenderedImage>; 8],
     icons: [Arc<RenderedImage>; 8],
+}
+
+#[derive(Clone, Copy, Debug)]
+enum FruitSpriteCommand {
+    Item(usize),
+    Icon(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -86,8 +121,158 @@ pub struct MazeSprites {
     flash_background: Arc<RenderedImage>,
 }
 
+trait SpriteController<C>: Send + 'static {
+    fn update(&mut self, command: C) -> Arc<RenderedImage>;
+    fn reset(&mut self) -> Arc<RenderedImage>;
+}
+
+enum SpriteRequest<C> {
+    Update(C, Sender<Arc<RenderedImage>>),
+    Reset(Sender<Arc<RenderedImage>>),
+    Shutdown,
+}
+
+struct SpriteWorkerInner<C> {
+    sender: Sender<SpriteRequest<C>>,
+    handle: Mutex<Option<JoinHandle<()>>>,
+    name: String,
+}
+
+#[derive(Clone)]
+struct SpriteWorker<C> {
+    inner: Arc<SpriteWorkerInner<C>>,
+}
+
+impl<C: Send + 'static> SpriteWorker<C> {
+    fn spawn(name: impl Into<String>, controller: impl SpriteController<C>) -> Self {
+        let name = name.into();
+        let (sender, receiver) = mpsc::channel();
+        let thread_name = name.clone();
+        let handle = thread::Builder::new()
+            .name(thread_name.clone())
+            .spawn(move || run_sprite_worker(receiver, controller))
+            .unwrap_or_else(|error| panic!("failed to spawn {thread_name}: {error}"));
+
+        Self {
+            inner: Arc::new(SpriteWorkerInner {
+                sender,
+                handle: Mutex::new(Some(handle)),
+                name,
+            }),
+        }
+    }
+
+    fn update(&self, command: C) -> Arc<RenderedImage> {
+        self.request(|reply| SpriteRequest::Update(command, reply))
+    }
+
+    fn reset(&self) -> Arc<RenderedImage> {
+        self.request(SpriteRequest::Reset)
+    }
+
+    fn request(
+        &self,
+        build: impl FnOnce(Sender<Arc<RenderedImage>>) -> SpriteRequest<C>,
+    ) -> Arc<RenderedImage> {
+        let (reply, response) = mpsc::channel();
+        self.inner
+            .sender
+            .send(build(reply))
+            .expect("sprite worker should accept commands while its handle is alive");
+        response
+            .recv()
+            .expect("sprite worker should answer each command before shutting down")
+    }
+}
+
+impl<C> fmt::Debug for SpriteWorker<C> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SpriteWorker")
+            .field("name", &self.inner.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<C> Drop for SpriteWorkerInner<C> {
+    fn drop(&mut self) {
+        let _ = self.sender.send(SpriteRequest::Shutdown);
+        if let Ok(mut handle) = self.handle.lock()
+            && let Some(handle) = handle.take()
+        {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn run_sprite_worker<C>(
+    receiver: Receiver<SpriteRequest<C>>,
+    mut controller: impl SpriteController<C>,
+) {
+    while let Ok(request) = receiver.recv() {
+        match request {
+            SpriteRequest::Update(command, reply) => {
+                let _ = reply.send(controller.update(command));
+            }
+            SpriteRequest::Reset(reply) => {
+                let _ = reply.send(controller.reset());
+            }
+            SpriteRequest::Shutdown => break,
+        }
+    }
+}
+
 impl PacmanSprites {
     pub fn new() -> Self {
+        let controller = PacmanSpriteController::new();
+        let current = controller.current();
+        Self {
+            worker: SpriteWorker::spawn("pacman-sprite", controller),
+            current,
+        }
+    }
+
+    /// Resets reset.
+    pub fn reset(&mut self) {
+        self.current = self.worker.reset();
+    }
+
+    pub fn update(&mut self, dt: f32, direction: Direction) -> Arc<RenderedImage> {
+        self.update_for_state(dt, direction, true)
+    }
+
+    /// Updates for state.
+    pub fn update_for_state(
+        &mut self,
+        dt: f32,
+        direction: Direction,
+        alive: bool,
+    ) -> Arc<RenderedImage> {
+        self.current = self.worker.update(PacmanSpriteCommand {
+            dt,
+            direction,
+            alive,
+        });
+        self.current.clone()
+    }
+
+    pub fn current(&self) -> Arc<RenderedImage> {
+        self.current.clone()
+    }
+}
+
+impl fmt::Debug for PacmanSprites {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PacmanSprites")
+            .field("current_width", &self.current.width)
+            .field("current_height", &self.current.height)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PacmanSpriteController {
+    fn new() -> Self {
         let assets = shared_arcade_assets();
         let stop_left = assets.pacman_left.clone();
         let stop_right = assets.pacman_right.clone();
@@ -107,33 +292,30 @@ impl PacmanSprites {
             stop_up,
             stop_down,
             stop_image: stop_left.clone(),
-            current: stop_left,
             chomp_dt: 0.0,
             chomp_open: false,
         }
     }
 
-    /// Resets reset.
-    pub fn reset(&mut self) {
+    fn current(&self) -> Arc<RenderedImage> {
+        self.stop_image.clone()
+    }
+
+    fn reset_state(&mut self) -> Arc<RenderedImage> {
         self.death.reset();
         self.stop_image = self.stop_left.clone();
-        self.current = self.stop_left.clone();
         self.chomp_dt = 0.0;
         self.chomp_open = false;
+        self.stop_image.clone()
     }
 
-    pub fn update(&mut self, dt: f32, direction: Direction) -> Arc<RenderedImage> {
-        self.update_for_state(dt, direction, true)
-    }
-
-    /// Updates for state.
-    pub fn update_for_state(
+    fn image_for_state(
         &mut self,
         dt: f32,
         direction: Direction,
         alive: bool,
     ) -> Arc<RenderedImage> {
-        self.current = if alive {
+        if alive {
             if direction == Direction::Stop {
                 self.chomp_dt = 0.0;
                 self.chomp_open = false;
@@ -173,13 +355,17 @@ impl PacmanSprites {
             }
         } else {
             self.death.update(dt)
-        };
+        }
+    }
+}
 
-        self.current.clone()
+impl SpriteController<PacmanSpriteCommand> for PacmanSpriteController {
+    fn update(&mut self, command: PacmanSpriteCommand) -> Arc<RenderedImage> {
+        self.image_for_state(command.dt, command.direction, command.alive)
     }
 
-    pub fn current(&self) -> Arc<RenderedImage> {
-        self.current.clone()
+    fn reset(&mut self) -> Arc<RenderedImage> {
+        self.reset_state()
     }
 }
 
@@ -192,24 +378,13 @@ impl Default for PacmanSprites {
 impl GhostSprites {
     pub fn new() -> Self {
         let assets = shared_arcade_assets();
-        let left = assets.ghost_left.clone();
-        let down = assets.ghost_down.clone();
-        let right = assets.ghost_right.clone();
-        let up = assets.ghost_up.clone();
-        let start = up.clone();
-
         Self {
-            start,
-            up,
-            down,
-            left,
-            right,
-            spawn_up: assets.ghost_eyes_up.clone(),
-            spawn_down: assets.ghost_eyes_down.clone(),
-            spawn_left: assets.ghost_eyes_left.clone(),
-            spawn_right: assets.ghost_eyes_right.clone(),
-            freight: assets.ghost_freight.clone(),
-            freight_flash: assets.ghost_freight_flash.clone(),
+            ghosts: std::array::from_fn(|index| {
+                SpriteWorker::spawn(
+                    format!("ghost-sprite-{index}"),
+                    GhostSpriteController::new(index, assets),
+                )
+            }),
         }
     }
 
@@ -221,15 +396,57 @@ impl GhostSprites {
         freight_remaining: Option<f32>,
         fright_total_duration: Option<f32>,
     ) -> Arc<RenderedImage> {
-        let index = kind.index();
+        self.ghosts[kind.index()].update(GhostSpriteCommand {
+            mode,
+            direction,
+            freight_remaining,
+            fright_total_duration,
+        })
+    }
+}
 
+impl fmt::Debug for GhostSprites {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GhostSprites")
+            .field("workers", &self.ghosts)
+            .finish()
+    }
+}
+
+impl GhostSpriteController {
+    fn new(index: usize, assets: &ArcadeActorAssets) -> Self {
+        let up = assets.ghost_up[index].clone();
+
+        Self {
+            start: up.clone(),
+            up,
+            down: assets.ghost_down[index].clone(),
+            left: assets.ghost_left[index].clone(),
+            right: assets.ghost_right[index].clone(),
+            spawn_up: assets.ghost_eyes_up.clone(),
+            spawn_down: assets.ghost_eyes_down.clone(),
+            spawn_left: assets.ghost_eyes_left.clone(),
+            spawn_right: assets.ghost_eyes_right.clone(),
+            freight: assets.ghost_freight.clone(),
+            freight_flash: assets.ghost_freight_flash.clone(),
+        }
+    }
+
+    fn image_for_state(
+        &self,
+        mode: GhostMode,
+        direction: Direction,
+        freight_remaining: Option<f32>,
+        fright_total_duration: Option<f32>,
+    ) -> Arc<RenderedImage> {
         match mode {
             GhostMode::Scatter | GhostMode::Chase => match direction {
-                Direction::Up => self.up[index].clone(),
-                Direction::Down => self.down[index].clone(),
-                Direction::Left => self.left[index].clone(),
-                Direction::Right => self.right[index].clone(),
-                Direction::Stop => self.start[index].clone(),
+                Direction::Up => self.up.clone(),
+                Direction::Down => self.down.clone(),
+                Direction::Left => self.left.clone(),
+                Direction::Right => self.right.clone(),
+                Direction::Stop => self.start.clone(),
             },
             GhostMode::Freight => self.freight_image(freight_remaining, fright_total_duration),
             GhostMode::Spawn => match direction {
@@ -265,6 +482,21 @@ impl GhostSprites {
     }
 }
 
+impl SpriteController<GhostSpriteCommand> for GhostSpriteController {
+    fn update(&mut self, command: GhostSpriteCommand) -> Arc<RenderedImage> {
+        self.image_for_state(
+            command.mode,
+            command.direction,
+            command.freight_remaining,
+            command.fright_total_duration,
+        )
+    }
+
+    fn reset(&mut self) -> Arc<RenderedImage> {
+        self.start.clone()
+    }
+}
+
 impl Default for GhostSprites {
     fn default() -> Self {
         Self::new()
@@ -273,19 +505,17 @@ impl Default for GhostSprites {
 
 impl FruitSprites {
     pub fn new() -> Self {
-        let assets = shared_arcade_assets();
         Self {
-            items: assets.fruit_items.clone(),
-            icons: assets.fruit_icons.clone(),
+            worker: SpriteWorker::spawn("fruit-sprite", FruitSpriteController::new()),
         }
     }
 
     pub fn item_image(&self, index: usize) -> Arc<RenderedImage> {
-        self.items[index % self.items.len()].clone()
+        self.worker.update(FruitSpriteCommand::Item(index))
     }
 
     pub fn icon_image(&self, index: usize) -> Arc<RenderedImage> {
-        self.icons[index % self.icons.len()].clone()
+        self.worker.update(FruitSpriteCommand::Icon(index))
     }
 
     pub fn image(&self, index: usize) -> Arc<RenderedImage> {
@@ -294,6 +524,46 @@ impl FruitSprites {
 
     pub fn image_for_level(&self, level_index: u32) -> Arc<RenderedImage> {
         self.item_image(level_index as usize)
+    }
+}
+
+impl fmt::Debug for FruitSprites {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FruitSprites")
+            .field("worker", &self.worker)
+            .finish()
+    }
+}
+
+impl FruitSpriteController {
+    fn new() -> Self {
+        let assets = shared_arcade_assets();
+        Self {
+            items: assets.fruit_items.clone(),
+            icons: assets.fruit_icons.clone(),
+        }
+    }
+
+    fn item_image(&self, index: usize) -> Arc<RenderedImage> {
+        self.items[index % self.items.len()].clone()
+    }
+
+    fn icon_image(&self, index: usize) -> Arc<RenderedImage> {
+        self.icons[index % self.icons.len()].clone()
+    }
+}
+
+impl SpriteController<FruitSpriteCommand> for FruitSpriteController {
+    fn update(&mut self, command: FruitSpriteCommand) -> Arc<RenderedImage> {
+        match command {
+            FruitSpriteCommand::Item(index) => self.item_image(index),
+            FruitSpriteCommand::Icon(index) => self.icon_image(index),
+        }
+    }
+
+    fn reset(&mut self) -> Arc<RenderedImage> {
+        self.item_image(0)
     }
 }
 
