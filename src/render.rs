@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use crate::{
     constants::{BLACK, SCREEN_HEIGHT, SCREEN_WIDTH},
-    terminal::TerminalGeometry,
     vector::Vector2,
 };
 
@@ -54,6 +53,18 @@ pub struct Renderer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderTargetSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl RenderTargetSize {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpriteAnchor {
     Center,
     TopLeft,
@@ -74,8 +85,8 @@ struct SceneTransform {
 }
 
 impl Renderer {
-    pub fn new(geometry: TerminalGeometry) -> Self {
-        let (image_width, image_height) = raster_size(geometry);
+    pub fn new(size: RenderTargetSize) -> Self {
+        let (image_width, image_height) = raster_size(size);
         Self {
             image_width,
             image_height,
@@ -83,8 +94,8 @@ impl Renderer {
         }
     }
 
-    pub fn resize(&mut self, geometry: TerminalGeometry) {
-        let (image_width, image_height) = raster_size(geometry);
+    pub fn resize(&mut self, size: RenderTargetSize) {
+        let (image_width, image_height) = raster_size(size);
         self.image_width = image_width;
         self.image_height = image_height;
         self.render_target.resize(image_width, image_height);
@@ -145,21 +156,14 @@ impl Renderer {
         &self.render_target
     }
 
-    pub fn scene_position_for_terminal_cell(
-        &self,
-        geometry: TerminalGeometry,
-        column: u16,
-        row: u16,
-    ) -> Option<Vector2> {
-        if geometry.cols == 0 || geometry.rows == 0 {
+    pub fn scene_position_for_pixel(&self, x: f32, y: f32) -> Option<Vector2> {
+        if self.image_width == 0 || self.image_height == 0 {
             return None;
         }
 
-        let image_x = (column as f32 + 0.5) * self.image_width as f32 / geometry.cols as f32;
-        let image_y = (row as f32 + 0.5) * self.image_height as f32 / geometry.rows as f32;
         let transform = SceneTransform::new(self.image_width as f32, self.image_height as f32);
 
-        Some(transform.inverse_point(image_x, image_y))
+        Some(transform.inverse_point(x, y))
     }
 }
 
@@ -385,46 +389,26 @@ impl SceneTransform {
     }
 }
 
-fn raster_size(geometry: TerminalGeometry) -> (u32, u32) {
-    let source_width = if geometry.pixel_width > 0 {
-        geometry.pixel_width as u32
-    } else {
-        SCREEN_WIDTH
-    };
-    let source_height = if geometry.pixel_height > 0 {
-        geometry.pixel_height as u32
-    } else {
-        SCREEN_HEIGHT
-    };
-
-    scale_to_fit(
-        source_width,
-        source_height,
-        SCREEN_WIDTH * 2,
-        SCREEN_HEIGHT * 2,
-    )
+fn raster_size(size: RenderTargetSize) -> (u32, u32) {
+    scale_to_fit(size.width, size.height)
 }
 
-fn scale_to_fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u32, u32) {
+fn scale_to_fit(width: u32, height: u32) -> (u32, u32) {
     if width == 0 || height == 0 {
         return (SCREEN_WIDTH, SCREEN_HEIGHT);
     }
 
-    let scale = (max_width as f32 / width as f32)
-        .min(max_height as f32 / height as f32)
-        .min(1.0);
-
-    let scaled_width = ((width as f32 * scale).round() as u32).max(SCREEN_WIDTH);
-    let scaled_height = ((height as f32 * scale).round() as u32).max(SCREEN_HEIGHT);
-    (scaled_width, scaled_height)
+    (width.max(SCREEN_WIDTH), height.max(SCREEN_HEIGHT))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Circle, FrameData, Line, RenderedImage, Renderer, SceneTransform, scale_to_fit};
+    use super::{
+        Circle, FrameData, Line, RenderTargetSize, RenderedImage, Renderer, SceneTransform,
+        scale_to_fit,
+    };
     use crate::{
         constants::{SCREEN_HEIGHT, SCREEN_WIDTH},
-        terminal::TerminalGeometry,
         vector::Vector2,
     };
 
@@ -439,11 +423,9 @@ mod tests {
     }
 
     fn screen_renderer() -> Renderer {
-        Renderer::new(TerminalGeometry {
-            cols: 10,
-            rows: 10,
-            pixel_width: SCREEN_WIDTH as u16,
-            pixel_height: SCREEN_HEIGHT as u16,
+        Renderer::new(RenderTargetSize {
+            width: SCREEN_WIDTH,
+            height: SCREEN_HEIGHT,
         })
     }
 
@@ -469,11 +451,9 @@ mod tests {
 
     #[test]
     fn renderer_uses_the_logical_screen_size_as_a_minimum() {
-        let renderer = Renderer::new(TerminalGeometry {
-            cols: 10,
-            rows: 10,
-            pixel_width: 0,
-            pixel_height: 0,
+        let renderer = Renderer::new(RenderTargetSize {
+            width: 0,
+            height: 0,
         });
 
         assert_eq!(renderer.image_width, SCREEN_WIDTH);
@@ -546,36 +526,19 @@ mod tests {
     }
 
     #[test]
-    fn scene_position_returns_none_when_terminal_has_no_cells() {
+    fn scene_position_projects_pixels_into_scene_coordinates() {
         let renderer = screen_renderer();
-        let scene = renderer.scene_position_for_terminal_cell(
-            TerminalGeometry {
-                cols: 0,
-                rows: 0,
-                pixel_width: SCREEN_WIDTH as u16,
-                pixel_height: SCREEN_HEIGHT as u16,
-            },
-            0,
-            0,
-        );
+        let scene = renderer.scene_position_for_pixel(0.0, 0.0);
 
-        assert!(scene.is_none());
+        assert_eq!(scene, Some(Vector2::new(0.0, 0.0)));
     }
 
     #[test]
-    fn scale_to_fit_honours_minimum_and_maximum_bounds() {
+    fn scale_to_fit_honours_the_logical_minimum() {
+        assert_eq!(scale_to_fit(0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT));
         assert_eq!(
-            scale_to_fit(0, 0, SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2),
-            (SCREEN_WIDTH, SCREEN_HEIGHT)
-        );
-        assert_eq!(
-            scale_to_fit(
-                SCREEN_WIDTH * 4,
-                SCREEN_HEIGHT * 4,
-                SCREEN_WIDTH * 2,
-                SCREEN_HEIGHT * 2
-            ),
-            (SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2)
+            scale_to_fit(SCREEN_WIDTH * 4, SCREEN_HEIGHT * 4),
+            (SCREEN_WIDTH * 4, SCREEN_HEIGHT * 4)
         );
     }
 

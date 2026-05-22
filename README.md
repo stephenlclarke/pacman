@@ -15,7 +15,7 @@
 
 ---
 
-This is a rust implmentation of Pacman rendered with Kitty graphics.
+This is a Rust implementation of Pacman rendered in a native window with wgpu.
 
 ![PacMan](docs/pacman.png)
 
@@ -39,8 +39,7 @@ Run targets:
 - `cargo run --example generate_start_sequence_gif`
 - `cargo run --example headless_autopilot`
 
-Run this inside `kitty`, `ghostty`, `warp` or another terminal that supports the
-Kitty graphics protocol.
+Run `cargo run` to launch the game in its own window.
 
 ## Install
 
@@ -65,10 +64,6 @@ Version tags such as `v1.0.0` also publish prebuilt GitHub Release binaries for:
 
 Notes:
 
-- Run it inside `kitty`, `ghostty`, `warp`, or another terminal that supports
-  the Kitty graphics protocol.
-- Download Ghostty: <https://ghostty.org/download>
-- Download Warp: <https://www.warp.dev/download>
 - The top score now persists between runs in `~/.xyzzy/pacman/high_scores.txt`;
   set `PACMAN_DATA_DIR` to redirect that file for local experiments or tests.
 - If `pacman` is not found after installation, ensure `~/.cargo/bin` is on your
@@ -275,20 +270,18 @@ Sound effects and music are embedded in the binary and played in-process using
 platform-specific command such as `/usr/bin/afplay` and makes the audio path
 portable across macOS and Linux.
 
-macOS is still the only platform that has been actively validated. Most of the
-rendering and terminal code is already Unix-oriented, and the audio layer no
-longer needs a separate Linux backend, but Linux support has not been tested
-end to end yet.
+macOS is still the only platform that has been actively validated. Rendering now
+uses `winit` and `wgpu`, and the audio layer no longer needs a separate Linux
+backend, but Linux support has not been tested end to end yet.
 
 To finish Linux support, the remaining work is:
 
-- Verify Kitty graphics protocol support and terminal pixel sizing on Linux
-  terminals such as Kitty and Ghostty, since rendering depends on a compatible
-  terminal and `ioctl(TIOCGWINSZ)` reporting usable pixel dimensions.
+- Run the wgpu window renderer on real Linux machines or CI runners to confirm
+  that Vulkan, Wayland, and X11-backed setups create a surface cleanly.
 - Run the game on real Linux machines or CI runners to confirm that `rodio` can
   open the default audio device cleanly on ALSA, PulseAudio, or PipeWire-backed
   setups.
-- Add Linux-specific install notes for terminal choice, audio stack quirks, and
-  any distro packages needed for building or running the app.
+- Add Linux-specific install notes for graphics/audio stack quirks and any
+  distro packages needed for building or running the app.
 - Expand the test and release matrix so Linux builds and smoke tests are kept
   healthy going forward.

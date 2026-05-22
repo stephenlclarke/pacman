@@ -1,25 +1,27 @@
-//! Runs the terminal application loop, input polling, fixed-timestep updates, and final frame presentation.
+//! Runs the window application loop, input handling, fixed-timestep updates, and frame presentation.
 
 use std::{
-    io::{Write, stdout},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-use anyhow::{Result, bail};
-use crossterm::{
-    cursor::MoveTo,
-    queue,
-    terminal::{Clear, ClearType},
+use anyhow::{Context, Result, bail};
+use winit::{
+    application::ApplicationHandler,
+    dpi::{LogicalSize, PhysicalSize},
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    window::{Window, WindowId},
 };
 
 use crate::{
     arcade::ORIGINAL_FRAME_TIME,
     audio::AudioManager,
+    constants::{SCREEN_HEIGHT, SCREEN_WIDTH},
     game::{Game, UpdateInput},
-    input::{InputController, MouseCell},
-    kitty::KittyGraphics,
-    render::Renderer,
-    terminal::{TerminalSession, geometry},
+    input::{InputController, MousePosition},
+    render::{RenderTargetSize, Renderer},
+    wgpu_graphics::WgpuGraphics,
 };
 
 const MAX_DT: f32 = 0.1;
@@ -27,118 +29,246 @@ const MAX_DT: f32 = 0.1;
 pub fn run() -> Result<()> {
     parse_args(std::env::args().skip(1))?;
 
-    KittyGraphics::ensure_supported()?;
+    let event_loop = EventLoop::new().context("creating window event loop")?;
+    let mut app = PacmanApp::new();
+    event_loop
+        .run_app(&mut app)
+        .context("running window event loop")?;
 
-    let mut stdout = stdout();
-    let _session = TerminalSession::enter(&mut stdout)?;
-    queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
-    stdout.flush()?;
-
-    let mut terminal_geometry = geometry()?;
-    let mut renderer = Renderer::new(terminal_geometry);
-    let mut graphics = KittyGraphics::new(terminal_geometry.cols, terminal_geometry.rows);
-    let mut input = InputController::default();
-    let mut game = Game::load();
-    let mut audio = AudioManager::new();
-    for event in game.drain_events() {
-        audio.handle_event(event);
+    if let Some(error) = app.error {
+        Err(error)
+    } else {
+        Ok(())
     }
-    let frame_time = ORIGINAL_FRAME_TIME;
-    let frame_duration = Duration::from_secs_f32(frame_time);
-    let mut pending_input = UpdateInput::default();
-    let mut accumulator = 0.0f32;
-    let mut last_tick = Instant::now();
+}
 
-    loop {
-        let frame_started = Instant::now();
-        sync_terminal_geometry(&mut terminal_geometry, &mut renderer, &mut graphics)?;
+struct PacmanApp {
+    window: Option<Arc<Window>>,
+    window_id: Option<WindowId>,
+    renderer: Option<Renderer>,
+    graphics: Option<WgpuGraphics>,
+    input: InputController,
+    game: Game,
+    audio: AudioManager,
+    frame_time: f32,
+    frame_duration: Duration,
+    pending_input: UpdateInput,
+    accumulator: f32,
+    last_tick: Instant,
+    next_frame: Instant,
+    error: Option<anyhow::Error>,
+}
 
-        if poll_input(&mut input)? {
-            break;
+impl PacmanApp {
+    fn new() -> Self {
+        let mut game = Game::load();
+        let mut audio = AudioManager::new();
+        for event in game.drain_events() {
+            audio.handle_event(event);
         }
 
-        let dt = last_tick.elapsed().as_secs_f32().min(MAX_DT);
-        last_tick = Instant::now();
-        accumulator = (accumulator + dt).min(frame_time * 8.0);
+        let frame_time = ORIGINAL_FRAME_TIME;
+        let now = Instant::now();
 
-        merge_input(
-            &mut pending_input,
-            collect_update_input(&mut input, &renderer, terminal_geometry),
+        Self {
+            window: None,
+            window_id: None,
+            renderer: None,
+            graphics: None,
+            input: InputController::default(),
+            game,
+            audio,
+            frame_time,
+            frame_duration: Duration::from_secs_f32(frame_time),
+            pending_input: UpdateInput::default(),
+            accumulator: 0.0,
+            last_tick: now,
+            next_frame: now,
+            error: None,
+        }
+    }
+
+    fn initialize_window(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
+        let logical_size = LogicalSize::new(SCREEN_WIDTH as f64, SCREEN_HEIGHT as f64);
+        let window = Arc::new(
+            event_loop
+                .create_window(
+                    Window::default_attributes()
+                        .with_title("Pac-Man")
+                        .with_inner_size(logical_size)
+                        .with_min_inner_size(logical_size),
+                )
+                .context("creating Pac-Man window")?,
         );
+        let physical_size = window.inner_size();
+        let graphics = pollster::block_on(WgpuGraphics::new(window.clone()))?;
+        let renderer = Renderer::new(render_target_size(physical_size));
+        let now = Instant::now();
 
-        if advance_game(&mut game, &mut pending_input, &mut accumulator, frame_time) {
-            break;
+        self.window_id = Some(window.id());
+        self.window = Some(window);
+        self.graphics = Some(graphics);
+        self.renderer = Some(renderer);
+        self.last_tick = now;
+        self.next_frame = now;
+
+        Ok(())
+    }
+
+    fn handle_resize(&mut self, size: PhysicalSize<u32>) {
+        if size.width == 0 || size.height == 0 {
+            return;
         }
 
-        render_frame(
-            &mut game,
-            &mut audio,
-            &mut renderer,
-            &mut graphics,
-            &mut stdout,
-        )?;
-
-        if wait_for_next_frame(&mut input, frame_started, frame_duration)? {
-            break;
+        let size = render_target_size(size);
+        if let Some(renderer) = &mut self.renderer {
+            renderer.resize(size);
+        }
+        if let Some(graphics) = &mut self.graphics {
+            graphics.resize(size);
         }
     }
 
-    graphics.clear(&mut stdout)?;
-    stdout.flush()?;
+    fn redraw(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
+        let frame_started = Instant::now();
+        let update_input = {
+            let renderer = self
+                .renderer
+                .as_ref()
+                .context("renderer was not initialized")?;
+            collect_update_input(&mut self.input, renderer)
+        };
 
-    Ok(())
-}
+        let dt = self.last_tick.elapsed().as_secs_f32().min(MAX_DT);
+        self.last_tick = Instant::now();
+        self.accumulator = (self.accumulator + dt).min(self.frame_time * 8.0);
 
-fn sync_terminal_geometry(
-    terminal_geometry: &mut crate::terminal::TerminalGeometry,
-    renderer: &mut Renderer,
-    graphics: &mut KittyGraphics,
-) -> Result<()> {
-    let latest_geometry = geometry()?;
-    if latest_geometry != *terminal_geometry {
-        *terminal_geometry = latest_geometry;
-        renderer.resize(*terminal_geometry);
-        graphics.resize(terminal_geometry.cols, terminal_geometry.rows);
+        merge_input(&mut self.pending_input, update_input);
+
+        if advance_game(
+            &mut self.game,
+            &mut self.pending_input,
+            &mut self.accumulator,
+            self.frame_time,
+        ) {
+            event_loop.exit();
+            return Ok(());
+        }
+
+        {
+            let renderer = self
+                .renderer
+                .as_mut()
+                .context("renderer was not initialized")?;
+            let graphics = self
+                .graphics
+                .as_mut()
+                .context("wgpu graphics were not initialized")?;
+            render_frame(&mut self.game, &mut self.audio, renderer, graphics)?;
+        }
+
+        schedule_next_frame(&mut self.next_frame, frame_started, self.frame_duration);
+        if self.game.quit_requested() {
+            event_loop.exit();
+        }
+
+        Ok(())
     }
-    Ok(())
+
+    fn stop_with_error(&mut self, event_loop: &ActiveEventLoop, error: anyhow::Error) {
+        if self.error.is_none() {
+            self.error = Some(error);
+        }
+        event_loop.exit();
+    }
 }
 
-fn poll_input(input: &mut InputController) -> Result<bool> {
-    input.poll()?;
-    Ok(input.quit_requested())
+impl ApplicationHandler for PacmanApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+
+        if let Err(error) = self.initialize_window(event_loop) {
+            self.stop_with_error(event_loop, error);
+            return;
+        }
+
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+        event_loop.set_control_flow(ControlFlow::Poll);
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        if Some(window_id) != self.window_id {
+            return;
+        }
+
+        self.input.handle_window_event(&event);
+        if self.input.quit_requested() {
+            event_loop.exit();
+            return;
+        }
+
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::Resized(size) => self.handle_resize(size),
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = self.redraw(event_loop) {
+                    self.stop_with_error(event_loop, error);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.error.is_some() {
+            event_loop.exit();
+            return;
+        }
+
+        let Some(window) = &self.window else {
+            return;
+        };
+
+        let now = Instant::now();
+        if now >= self.next_frame {
+            window.request_redraw();
+            event_loop.set_control_flow(ControlFlow::Poll);
+        } else {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+        }
+    }
 }
 
-fn collect_update_input(
-    input: &mut InputController,
-    renderer: &Renderer,
-    terminal_geometry: crate::terminal::TerminalGeometry,
-) -> UpdateInput {
+fn render_target_size(size: PhysicalSize<u32>) -> RenderTargetSize {
+    RenderTargetSize::new(size.width, size.height)
+}
+
+fn collect_update_input(input: &mut InputController, renderer: &Renderer) -> UpdateInput {
     UpdateInput {
         requested_direction: input.direction(),
         pause_requested: input.take_pause_requested(),
         start_requested: input.take_start_requested(),
-        mouse_position: mouse_scene_position(input.mouse_cell(), renderer, terminal_geometry),
-        mouse_click_position: mouse_scene_position(
-            input.take_mouse_click(),
-            renderer,
-            terminal_geometry,
-        ),
+        mouse_position: mouse_scene_position(input.mouse_position(), renderer),
+        mouse_click_position: mouse_scene_position(input.take_mouse_click(), renderer),
         typed_chars: input.take_typed_chars(),
     }
 }
 
 fn mouse_scene_position(
-    mouse_cell: Option<MouseCell>,
+    mouse_position: Option<MousePosition>,
     renderer: &Renderer,
-    terminal_geometry: crate::terminal::TerminalGeometry,
 ) -> Option<crate::vector::Vector2> {
-    mouse_cell.and_then(|mouse_cell| {
-        renderer.scene_position_for_terminal_cell(
-            terminal_geometry,
-            mouse_cell.column(),
-            mouse_cell.row(),
-        )
-    })
+    mouse_position
+        .and_then(|position| renderer.scene_position_for_pixel(position.x(), position.y()))
 }
 
 fn advance_game(
@@ -175,29 +305,22 @@ fn render_frame(
     game: &mut Game,
     audio: &mut AudioManager,
     renderer: &mut Renderer,
-    graphics: &mut KittyGraphics,
-    stdout: &mut std::io::Stdout,
+    graphics: &mut WgpuGraphics,
 ) -> Result<()> {
     for event in game.drain_events() {
         audio.handle_event(event);
     }
     let frame = game.frame();
     let image = renderer.render(&frame);
-    graphics.draw_frame(stdout, image)?;
-    stdout.flush()?;
+    graphics.draw_frame(image)?;
     Ok(())
 }
 
-fn wait_for_next_frame(
-    input: &mut InputController,
-    frame_started: Instant,
-    frame_duration: Duration,
-) -> Result<bool> {
-    let elapsed = frame_started.elapsed();
-    if elapsed < frame_duration {
-        input.poll_for(frame_duration - elapsed)?;
+fn schedule_next_frame(next_frame: &mut Instant, frame_started: Instant, frame_duration: Duration) {
+    *next_frame = frame_started + frame_duration;
+    while *next_frame <= Instant::now() {
+        *next_frame += frame_duration;
     }
-    Ok(input.quit_requested())
 }
 
 fn merge_input(pending: &mut UpdateInput, next: UpdateInput) {
@@ -258,7 +381,7 @@ fn print_help() {
     println!(
         "Usage: cargo run [-- --help]
 
-Running `cargo run` launches the game.
+Running `cargo run` launches the game in a wgpu window.
 
 Controls:
   Arrow keys / WASD  Move Pacman
@@ -274,15 +397,14 @@ mod tests {
 
     use super::{
         advance_game, clear_one_shots, merge_input, mouse_scene_position, parse_args,
-        step_input_without_one_shots, wait_for_next_frame, whole_steps,
+        schedule_next_frame, step_input_without_one_shots, whole_steps,
     };
     use crate::{
         arcade::ORIGINAL_FRAME_TIME,
         game::{Game, UpdateInput},
-        input::InputController,
+        input::MousePosition,
         pacman::Direction,
-        render::Renderer,
-        terminal::TerminalGeometry,
+        render::{RenderTargetSize, Renderer},
         vector::Vector2,
     };
 
@@ -434,55 +556,35 @@ mod tests {
     }
 
     #[test]
-    /// Translates scene position projects terminal cells into scene coordinates.
-    fn mouse_scene_position_projects_terminal_cells_into_scene_coordinates() {
-        let geometry = TerminalGeometry {
-            cols: 80,
-            rows: 30,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        let renderer = Renderer::new(geometry);
+    /// Translates scene position projects window pixels into scene coordinates.
+    fn mouse_scene_position_projects_window_pixels_into_scene_coordinates() {
+        let renderer = Renderer::new(RenderTargetSize::new(448, 576));
 
-        let scene_position = mouse_scene_position(
-            Some(crate::input::MouseCell::default()),
-            &renderer,
-            geometry,
-        );
+        let scene_position =
+            mouse_scene_position(Some(MousePosition::new(216.0, 320.0)), &renderer);
 
-        assert!(scene_position.is_some());
+        assert_eq!(scene_position, Some(Vector2::new(216.0, 320.0)));
     }
 
     #[test]
-    /// Translates scene position returns none for empty terminal geometry.
-    fn mouse_scene_position_returns_none_for_empty_terminal_geometry() {
-        let geometry = TerminalGeometry {
-            cols: 0,
-            rows: 0,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        let renderer = Renderer::new(geometry);
+    /// Translates scene position returns none when there is no mouse position.
+    fn mouse_scene_position_returns_none_without_a_mouse_position() {
+        let renderer = Renderer::new(RenderTargetSize::new(448, 576));
 
-        let scene_position = mouse_scene_position(
-            Some(crate::input::MouseCell::default()),
-            &renderer,
-            geometry,
-        );
+        let scene_position = mouse_scene_position(None, &renderer);
 
         assert!(scene_position.is_none());
     }
 
     #[test]
-    fn wait_for_next_frame_returns_current_quit_state_when_frame_is_elapsed() {
-        let mut input = InputController::default();
-        let frame_started = Instant::now()
+    fn schedule_next_frame_moves_the_deadline_forward() {
+        let mut next_frame = Instant::now()
             .checked_sub(Duration::from_millis(5))
             .expect("instant subtraction should succeed");
+        let frame_started = Instant::now();
 
-        let quit = wait_for_next_frame(&mut input, frame_started, Duration::ZERO)
-            .expect("waiting should succeed");
+        schedule_next_frame(&mut next_frame, frame_started, Duration::from_millis(16));
 
-        assert!(!quit);
+        assert!(next_frame > frame_started);
     }
 }

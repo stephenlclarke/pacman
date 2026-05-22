@@ -113,10 +113,7 @@ impl ModeController {
         }
 
         self.phase_timer += dt;
-        loop {
-            let Some(duration) = self.phases[self.phase_index].duration else {
-                break;
-            };
+        while let Some(duration) = self.phases[self.phase_index].duration {
             if self.phase_timer < duration {
                 break;
             }

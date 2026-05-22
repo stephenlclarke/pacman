@@ -11,12 +11,12 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-base64 = "0.22"
-crossterm = "0.29"
 fastrand = "2.3"
-libc = "0.2"
 png = "0.18"
+pollster = "0.4"
 rodio = "0.21"
+wgpu = "29.0.3"
+winit = "0.30.13"
 
 [dev-dependencies]
 gif = "0.13"
