@@ -38,7 +38,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -76,7 +76,7 @@ jobs:
           Copy-Item "target\${{ matrix.target }}\release\${{ matrix.binary_name }}" "dist\${{ steps.asset.outputs.name }}"
 
       - name: Upload packaged binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.asset.outputs.name }}
           path: dist/${{ steps.asset.outputs.name }}
@@ -94,7 +94,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download packaged binaries
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
