@@ -2,7 +2,7 @@
 
 use std::io::Cursor;
 
-use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source, source::Repeat};
+use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source, source::Repeat};
 
 use crate::game::GameEvent;
 
@@ -20,7 +20,7 @@ enum SoundAsset {
 }
 
 struct AudioOutput {
-    stream: OutputStream,
+    sink: MixerDeviceSink,
 }
 
 type SoundDecoder = Decoder<Cursor<&'static [u8]>>;
@@ -28,8 +28,8 @@ type LoopingSoundDecoder = Repeat<SoundDecoder>;
 
 pub struct AudioManager {
     output: Option<AudioOutput>,
-    title_music: Option<Sink>,
-    freight_sound: Option<Sink>,
+    title_music: Option<Player>,
+    freight_sound: Option<Player>,
 }
 
 impl Default for AudioManager {
@@ -56,13 +56,13 @@ impl SoundAsset {
 
 impl AudioOutput {
     fn new() -> Option<Self> {
-        let mut stream = OutputStreamBuilder::open_default_stream().ok()?;
-        stream.log_on_drop(false);
-        Some(Self { stream })
+        let mut sink = DeviceSinkBuilder::open_default_sink().ok()?;
+        sink.log_on_drop(false);
+        Some(Self { sink })
     }
 
-    fn new_sink(&self) -> Sink {
-        Sink::connect_new(self.stream.mixer())
+    fn new_sink(&self) -> Player {
+        Player::connect_new(self.sink.mixer())
     }
 }
 
@@ -138,7 +138,7 @@ impl AudioManager {
         sink.detach();
     }
 
-    fn new_looping_sink(&self, sound: SoundAsset) -> Option<Sink> {
+    fn new_looping_sink(&self, sound: SoundAsset) -> Option<Player> {
         let output = self.output.as_ref()?;
         let source = looping_sound_decoder(sound)?;
         let sink = output.new_sink();
@@ -154,7 +154,7 @@ impl Drop for AudioManager {
     }
 }
 
-fn stop_sink(sink: &mut Option<Sink>) {
+fn stop_sink(sink: &mut Option<Player>) {
     if let Some(sink) = sink.take() {
         sink.stop();
     }
