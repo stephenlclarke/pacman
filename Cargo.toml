@@ -16,7 +16,7 @@ crossterm = "0.29"
 fastrand = "2.3"
 libc = "0.2"
 png = "0.18"
-rodio = "0.22"
+rodio = "0.23"
 
 [dev-dependencies]
 gif = "0.14"
