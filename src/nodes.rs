@@ -282,9 +282,9 @@ impl NodeGroup {
         xoffset: f32,
         yoffset: f32,
     ) {
-        for row in 0..data.tiles.len() {
-            for col in 0..data.width {
-                if node_symbols.contains(&data.tiles[row][col]) {
+        for (row, tiles) in data.tiles.iter().enumerate() {
+            for (col, symbol) in tiles.iter().enumerate().take(data.width) {
+                if node_symbols.contains(symbol) {
                     let key = Self::construct_key(col as f32 + xoffset, row as f32 + yoffset);
                     if self.lookup.contains_key(&key) {
                         continue;
@@ -306,10 +306,9 @@ impl NodeGroup {
         xoffset: f32,
         yoffset: f32,
     ) {
-        for row in 0..data.tiles.len() {
+        for (row, tiles) in data.tiles.iter().enumerate() {
             let mut current: Option<NodeId> = None;
-            for col in 0..data.width {
-                let symbol = data.tiles[row][col];
+            for (col, &symbol) in tiles.iter().enumerate().take(data.width) {
                 if node_symbols.contains(&symbol) {
                     let node_id = self
                         .get_node_from_tiles(col as f32 + xoffset, row as f32 + yoffset)
@@ -336,8 +335,8 @@ impl NodeGroup {
     ) {
         for col in 0..data.width {
             let mut current: Option<NodeId> = None;
-            for row in 0..data.tiles.len() {
-                let symbol = data.tiles[row][col];
+            for (row, tiles) in data.tiles.iter().enumerate() {
+                let symbol = tiles[col];
                 if node_symbols.contains(&symbol) {
                     let node_id = self
                         .get_node_from_tiles(col as f32 + xoffset, row as f32 + yoffset)

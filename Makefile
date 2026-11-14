@@ -1,4 +1,4 @@
-.PHONY: fmt test clippy ci coverage sq sq-ci sonar run package-test workflow-lint docs-lint release-package
+.PHONY: fmt test clippy ci coverage sq sq-ci sonar run package-test workflow-lint docs-lint release-package gpu-test
 
 SONAR_SCANNER ?= sonar-scanner
 SONAR_ARGS ?= -Dsonar.qualitygate.wait=true
@@ -61,3 +61,7 @@ docs-lint:
 release-package:
 	cargo build --locked --release --bin pacman --target $(RELEASE_TARGET)
 	python3 scripts/package_release.py --target $(RELEASE_TARGET) --label $(RELEASE_LABEL)
+
+# Requires a working native GPU; compares readback with the software reference.
+gpu-test:
+	cargo test --locked --lib gpu_scene::tests -- --ignored --nocapture

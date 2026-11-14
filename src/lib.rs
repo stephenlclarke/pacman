@@ -24,3 +24,5 @@ pub mod sprites;
 pub mod text;
 pub mod vector;
 pub mod wgpu_graphics;
+
+mod gpu_scene;

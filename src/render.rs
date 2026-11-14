@@ -78,7 +78,7 @@ pub struct Sprite {
 }
 
 #[derive(Clone, Copy)]
-struct SceneTransform {
+pub(crate) struct SceneTransform {
     scale: f32,
     offset_x: f32,
     offset_y: f32,
@@ -331,7 +331,7 @@ impl RenderedImage {
 }
 
 impl SceneTransform {
-    fn new(image_width: f32, image_height: f32) -> Self {
+    pub(crate) fn new(image_width: f32, image_height: f32) -> Self {
         let scale = (image_width / SCREEN_WIDTH as f32).min(image_height / SCREEN_HEIGHT as f32);
         let content_width = SCREEN_WIDTH as f32 * scale;
         let content_height = SCREEN_HEIGHT as f32 * scale;
@@ -345,27 +345,27 @@ impl SceneTransform {
         }
     }
 
-    fn circle(self, x: f32, y: f32, radius: f32) -> (i32, i32, i32) {
+    pub(crate) fn circle(self, x: f32, y: f32, radius: f32) -> (i32, i32, i32) {
         let center_x = (self.offset_x + x * self.scale).round() as i32;
         let center_y = (self.offset_y + y * self.scale).round() as i32;
         let scaled_radius = (radius * self.scale).round() as i32;
         (center_x, center_y, scaled_radius.max(1))
     }
 
-    fn point(self, point: Vector2) -> (i32, i32) {
+    pub(crate) fn point(self, point: Vector2) -> (i32, i32) {
         let x = (self.offset_x + point.x * self.scale).round() as i32;
         let y = (self.offset_y + point.y * self.scale).round() as i32;
         (x, y)
     }
 
-    fn inverse_point(self, x: f32, y: f32) -> Vector2 {
+    pub(crate) fn inverse_point(self, x: f32, y: f32) -> Vector2 {
         Vector2::new(
             (x - self.offset_x) / self.scale,
             (y - self.offset_y) / self.scale,
         )
     }
 
-    fn rect(
+    pub(crate) fn rect(
         self,
         position: Vector2,
         width: f32,
@@ -384,7 +384,7 @@ impl SceneTransform {
         (x, y, scaled_width.max(1), scaled_height.max(1))
     }
 
-    fn scale_scalar(self, value: f32) -> i32 {
+    pub(crate) fn scale_scalar(self, value: f32) -> i32 {
         (value * self.scale).round() as i32
     }
 }

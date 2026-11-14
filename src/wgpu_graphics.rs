@@ -1,13 +1,16 @@
-//! Presents rendered RGBA frames in a native window using wgpu.
+//! Composes game scenes on the GPU and presents them in a native window.
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use winit::window::Window;
 
-use crate::render::{RenderTargetSize, RenderedImage};
+use crate::{
+    gpu_scene::{SCENE_FORMAT, SceneRenderer},
+    render::{FrameData, RenderTargetSize},
+};
 
-const FRAME_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const FRAME_TEXTURE_FORMAT: wgpu::TextureFormat = SCENE_FORMAT;
 
 const BLIT_SHADER: &str = r#"
 struct VertexOutput {
@@ -50,12 +53,13 @@ pub struct WgpuGraphics {
     sampler: wgpu::Sampler,
     pipeline: wgpu::RenderPipeline,
     frame_texture: Option<FrameTexture>,
+    scene: SceneRenderer,
 }
 
 struct FrameTexture {
     width: u32,
     height: u32,
-    texture: wgpu::Texture,
+    render_view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
 }
 
@@ -115,6 +119,7 @@ impl WgpuGraphics {
 
         Ok(Self {
             surface,
+            scene: SceneRenderer::new(&device),
             device,
             queue,
             config,
@@ -135,18 +140,13 @@ impl WgpuGraphics {
         self.reconfigure();
     }
 
-    pub fn draw_frame(&mut self, image: &RenderedImage) -> Result<()> {
-        if image.width == 0 || image.height == 0 {
-            return Ok(());
-        }
-
-        self.ensure_frame_texture(image.width, image.height);
-        self.write_frame_texture(image);
+    pub fn draw_scene(&mut self, frame: &FrameData) -> Result<()> {
+        self.ensure_frame_texture(self.config.width, self.config.height);
 
         match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(output)
             | wgpu::CurrentSurfaceTexture::Suboptimal(output) => {
-                self.draw_to_surface(output);
+                self.draw_to_surface(output, frame);
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {}
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
@@ -179,37 +179,11 @@ impl WgpuGraphics {
             &self.sampler,
             width,
             height,
+            self.config.format.is_srgb(),
         ));
     }
 
-    fn write_frame_texture(&self, image: &RenderedImage) {
-        let frame_texture = self
-            .frame_texture
-            .as_ref()
-            .expect("frame texture should exist before upload");
-
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &frame_texture.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &image.pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(image.width * 4),
-                rows_per_image: Some(image.height),
-            },
-            wgpu::Extent3d {
-                width: image.width,
-                height: image.height,
-                depth_or_array_layers: 1,
-            },
-        );
-    }
-
-    fn draw_to_surface(&self, output: wgpu::SurfaceTexture) {
+    fn draw_to_surface(&mut self, output: wgpu::SurfaceTexture, frame: &FrameData) {
         let surface_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -222,6 +196,14 @@ impl WgpuGraphics {
             .frame_texture
             .as_ref()
             .expect("frame texture should exist before drawing");
+        self.scene.encode(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &frame_texture.render_view,
+            [self.config.width, self.config.height],
+            frame,
+        );
         let color_attachments = [Some(wgpu::RenderPassColorAttachment {
             view: &surface_view,
             depth_slice: None,
@@ -258,6 +240,7 @@ impl FrameTexture {
         sampler: &wgpu::Sampler,
         width: u32,
         height: u32,
+        srgb_surface: bool,
     ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Pac-Man frame texture"),
@@ -270,10 +253,20 @@ impl FrameTexture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: FRAME_TEXTURE_FORMAT,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
         });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let render_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Compose in encoded color space to preserve the arcade assets' alpha blending.
+        // The sRGB view decodes once for presentation to an sRGB surface.
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(if srgb_surface {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            } else {
+                SCENE_FORMAT
+            }),
+            ..Default::default()
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Pac-Man frame texture bind group"),
             layout: bind_group_layout,
@@ -292,7 +285,7 @@ impl FrameTexture {
         Self {
             width,
             height,
-            texture,
+            render_view,
             bind_group,
         }
     }

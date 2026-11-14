@@ -28,10 +28,10 @@ This is a Rust implementation of Pacman rendered in a native window with `wgpu` 
 
 ## Build and Run
 
-The published wgpu port is on the `wgpu` branch; `main` and the `v1.0.0` tag still contain the older Kitty renderer. Start a source checkout with:
+GPU scene composition and the updated desktop release workflow are on `feat/wgpu-validation`. The older `wgpu` branch uses CPU composition with GPU presentation; remote `main` and the `v1.0.0` tag still contain the Kitty renderer. Start a source checkout with:
 
 ```sh
-git clone --branch wgpu https://github.com/stephenlclarke/pacman.git
+git clone --branch feat/wgpu-validation https://github.com/stephenlclarke/pacman.git
 cd pacman
 cargo build --locked
 cargo run --release
@@ -70,9 +70,11 @@ Keyboard and mouse input are handled by `winit`. Resizing preserves the game's a
 
 ## Rendering
 
-`src/app.rs` runs the native `winit` event loop and fixed-timestep game updates. `src/render.rs` composes sprites, maze graphics, and text into an RGBA frame on the CPU. `src/wgpu_graphics.rs` uploads that frame to a GPU texture and presents it using a WGSL shader, nearest-neighbor sampling, and FIFO presentation when available. It also handles window resizing and surface recovery.
+`src/app.rs` runs the native `winit` event loop and fixed-timestep game updates. It sends scene descriptions directly to `src/gpu_scene.rs`: cached maze, sprite, and text textures are drawn as instanced quads, while WGSL shaders rasterize and blend the shapes on the GPU. `src/wgpu_graphics.rs` presents the completed GPU texture with correct sRGB output, aspect-preserving scaling, and FIFO presentation when available. It also handles resizing and surface recovery.
 
-The implementation uses the native window and GPU presentation approach from [Defender](https://github.com/stephenlclarke/defender). Pacman retains its existing software frame composition rather than adopting Defender's GPU sprite atlas renderer. The Kitty renderer and terminal setup modules have been removed.
+Game logic, asset decoding, glyph image creation, and draw-command preparation remain on the CPU. Live play no longer rasterizes a complete RGBA frame on the CPU or uploads one every frame. Unchanged image assets stay in GPU memory; expired dynamic images leave the cache. Integrated and discrete GPUs are supported through wgpu, with a high-performance adapter preference. If no supported adapter can be created, startup reports an error.
+
+The implementation follows [Defender](https://github.com/stephenlclarke/defender)'s native window and GPU rendering approach. `src/render.rs` remains a software reference for deterministic tests and generated README media, and supplies shared viewport transforms. `make gpu-test` compares actual GPU readback with the software reference. Kitty renderer and terminal setup modules have been removed.
 
 ## Install
 
@@ -93,13 +95,13 @@ brew test stephenlclarke/tap/pacman
 pacman --help
 ```
 
-The formula builds from source with Homebrew's Rust dependency and installs the `pacman` command. The published formula version `1.0.0_1` pins wgpu commit `cd49a1a0f407801cdc492ba61b4cdc5f8afb42c5` with a verified SHA256; this differs from the old `v1.0.0` tag. The optional `brew install --HEAD stephenlclarke/tap/pacman` follows the `wgpu` branch. Linux builds also require the formula's `alsa-lib` and `pkgconf` dependencies. Interactive play requires a graphical desktop and a GPU supported by wgpu; the help and formula test run without opening a window.
+The formula builds from source with Homebrew's Rust dependency and installs the `pacman` command. Its currently published pin has wgpu presentation with CPU frame composition; use the source branch above to try the new GPU scene composer before the tap is updated. The published formula version `1.0.0_1` pins wgpu commit `cd49a1a0f407801cdc492ba61b4cdc5f8afb42c5` with a verified SHA256; this differs from the old `v1.0.0` tag. The optional `brew install --HEAD stephenlclarke/tap/pacman` follows the `wgpu` branch. Linux builds also require the formula's `alsa-lib` and `pkgconf` dependencies. Interactive play requires a graphical desktop and a GPU supported by wgpu; the help and formula test run without opening a window.
 
 Remove the Homebrew installation with `brew uninstall stephenlclarke/tap/pacman`. Scores and customisations in `~/.xyzzy/pacman/` remain available for a later installation.
 
 Install directly from git with Cargo:
 
-- `cargo install --git https://github.com/stephenlclarke/pacman --branch wgpu pacman`
+- `cargo install --git https://github.com/stephenlclarke/pacman --branch feat/wgpu-validation pacman`
 
 `cargo install` builds with Cargo's release profile by default. Do not pass `--debug` unless you explicitly want a slower debug build.
 
@@ -136,7 +138,7 @@ Expand-Archive .\pacman-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .\pacm
 .\pacman\pacman.exe
 ```
 
-Existing `v1.0.0` release binaries predate the wgpu port. This workflow change does not replace those files or publish a new release by itself. Until a new wgpu tag is released, use Homebrew or the Cargo `wgpu` branch installation above. Branch, pull-request, and manual workflow runs provide build archives under GitHub Actions artifacts; only version-tag pushes publish assets to GitHub Releases.
+Existing `v1.0.0` release binaries predate the wgpu port. This workflow change does not replace those files or publish a new release by itself. Until a new wgpu tag is released, use Homebrew for the previously published native-window build or the Cargo source branch above for GPU scene composition. Branch, pull-request, and manual workflow runs provide build archives under GitHub Actions artifacts; only version-tag pushes publish assets to GitHub Releases.
 
 Notes:
 
@@ -147,7 +149,7 @@ Notes:
 
 ## Validation and Troubleshooting
 
-`make ci` checks formatting, runs all-target Rust tests and release packaging tests, and runs Clippy with warnings rejected. Packaging checks require Python 3. Run `make workflow-lint` with `actionlint` installed to check GitHub Actions, and `make docs-lint` with `markdownlint` installed to check all maintained Markdown. Two expensive autopilot simulations are ignored by default; run `cargo test --lib -- --ignored` when those simulations are needed. These tests exercise game and frame composition logic; they do not prove a live GPU window works.
+`make ci` checks formatting, runs all-target Rust tests and release packaging tests, and runs Clippy with warnings rejected. Packaging checks require Python 3. Run `make workflow-lint` with `actionlint` installed to check GitHub Actions, and `make docs-lint` with `markdownlint` installed to check all maintained Markdown. Two expensive autopilot simulations and one native GPU parity test are ignored by default. Run `make gpu-test` on a machine with a working GPU to compare title, gameplay, shapes, texture scaling, transparency, and cache behavior against software-rendered frames. To run only the expensive autopilot tests, use `cargo test --lib autopilot -- --ignored`. Standard tests do not prove a live GPU window works.
 
 For a bounded headless game simulation without a window:
 

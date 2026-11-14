@@ -20,7 +20,7 @@ use crate::{
     constants::{SCREEN_HEIGHT, SCREEN_WIDTH},
     game::{Game, UpdateInput},
     input::{InputController, MousePosition},
-    render::{RenderTargetSize, Renderer},
+    render::{RenderTargetSize, SceneTransform},
     wgpu_graphics::WgpuGraphics,
 };
 
@@ -45,7 +45,7 @@ pub fn run() -> Result<()> {
 struct PacmanApp {
     window: Option<Arc<Window>>,
     window_id: Option<WindowId>,
-    renderer: Option<Renderer>,
+    viewport: Option<RenderTargetSize>,
     graphics: Option<WgpuGraphics>,
     input: InputController,
     game: Game,
@@ -73,7 +73,7 @@ impl PacmanApp {
         Self {
             window: None,
             window_id: None,
-            renderer: None,
+            viewport: None,
             graphics: None,
             input: InputController::default(),
             game,
@@ -102,13 +102,13 @@ impl PacmanApp {
         );
         let physical_size = window.inner_size();
         let graphics = pollster::block_on(WgpuGraphics::new(window.clone()))?;
-        let renderer = Renderer::new(render_target_size(physical_size));
+        let viewport = render_target_size(physical_size);
         let now = Instant::now();
 
         self.window_id = Some(window.id());
         self.window = Some(window);
         self.graphics = Some(graphics);
-        self.renderer = Some(renderer);
+        self.viewport = Some(viewport);
         self.last_tick = now;
         self.next_frame = now;
 
@@ -121,9 +121,7 @@ impl PacmanApp {
         }
 
         let size = render_target_size(size);
-        if let Some(renderer) = &mut self.renderer {
-            renderer.resize(size);
-        }
+        self.viewport = Some(size);
         if let Some(graphics) = &mut self.graphics {
             graphics.resize(size);
         }
@@ -132,11 +130,8 @@ impl PacmanApp {
     fn redraw(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
         let frame_started = Instant::now();
         let update_input = {
-            let renderer = self
-                .renderer
-                .as_ref()
-                .context("renderer was not initialized")?;
-            collect_update_input(&mut self.input, renderer)
+            let size = self.viewport.context("viewport was not initialized")?;
+            collect_update_input(&mut self.input, size)
         };
 
         let dt = self.last_tick.elapsed().as_secs_f32().min(MAX_DT);
@@ -156,15 +151,11 @@ impl PacmanApp {
         }
 
         {
-            let renderer = self
-                .renderer
-                .as_mut()
-                .context("renderer was not initialized")?;
             let graphics = self
                 .graphics
                 .as_mut()
                 .context("wgpu graphics were not initialized")?;
-            render_frame(&mut self.game, &mut self.audio, renderer, graphics)?;
+            render_frame(&mut self.game, &mut self.audio, graphics)?;
         }
 
         schedule_next_frame(&mut self.next_frame, frame_started, self.frame_duration);
@@ -252,23 +243,26 @@ fn render_target_size(size: PhysicalSize<u32>) -> RenderTargetSize {
     RenderTargetSize::new(size.width, size.height)
 }
 
-fn collect_update_input(input: &mut InputController, renderer: &Renderer) -> UpdateInput {
+fn collect_update_input(input: &mut InputController, size: RenderTargetSize) -> UpdateInput {
     UpdateInput {
         requested_direction: input.direction(),
         pause_requested: input.take_pause_requested(),
         start_requested: input.take_start_requested(),
-        mouse_position: mouse_scene_position(input.mouse_position(), renderer),
-        mouse_click_position: mouse_scene_position(input.take_mouse_click(), renderer),
+        mouse_position: mouse_scene_position(input.mouse_position(), size),
+        mouse_click_position: mouse_scene_position(input.take_mouse_click(), size),
         typed_chars: input.take_typed_chars(),
     }
 }
 
 fn mouse_scene_position(
     mouse_position: Option<MousePosition>,
-    renderer: &Renderer,
+    size: RenderTargetSize,
 ) -> Option<crate::vector::Vector2> {
-    mouse_position
-        .and_then(|position| renderer.scene_position_for_pixel(position.x(), position.y()))
+    if size.width == 0 || size.height == 0 {
+        return None;
+    }
+    let transform = SceneTransform::new(size.width as f32, size.height as f32);
+    mouse_position.map(|position| transform.inverse_point(position.x(), position.y()))
 }
 
 fn advance_game(
@@ -304,15 +298,13 @@ fn whole_steps(accumulator: &mut f32, frame_time: f32) -> usize {
 fn render_frame(
     game: &mut Game,
     audio: &mut AudioManager,
-    renderer: &mut Renderer,
     graphics: &mut WgpuGraphics,
 ) -> Result<()> {
     for event in game.drain_events() {
         audio.handle_event(event);
     }
     let frame = game.frame();
-    let image = renderer.render(&frame);
-    graphics.draw_frame(image)?;
+    graphics.draw_scene(&frame)?;
     Ok(())
 }
 
@@ -405,7 +397,7 @@ mod tests {
         game::{Game, UpdateInput},
         input::MousePosition,
         pacman::Direction,
-        render::{RenderTargetSize, Renderer},
+        render::RenderTargetSize,
         vector::Vector2,
     };
 
@@ -559,10 +551,9 @@ mod tests {
     #[test]
     /// Translates scene position projects window pixels into scene coordinates.
     fn mouse_scene_position_projects_window_pixels_into_scene_coordinates() {
-        let renderer = Renderer::new(RenderTargetSize::new(448, 576));
+        let size = RenderTargetSize::new(448, 576);
 
-        let scene_position =
-            mouse_scene_position(Some(MousePosition::new(216.0, 320.0)), &renderer);
+        let scene_position = mouse_scene_position(Some(MousePosition::new(216.0, 320.0)), size);
 
         assert_eq!(scene_position, Some(Vector2::new(216.0, 320.0)));
     }
@@ -570,9 +561,9 @@ mod tests {
     #[test]
     /// Translates scene position returns none when there is no mouse position.
     fn mouse_scene_position_returns_none_without_a_mouse_position() {
-        let renderer = Renderer::new(RenderTargetSize::new(448, 576));
+        let size = RenderTargetSize::new(448, 576);
 
-        let scene_position = mouse_scene_position(None, &renderer);
+        let scene_position = mouse_scene_position(None, size);
 
         assert!(scene_position.is_none());
     }

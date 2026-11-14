@@ -3,7 +3,7 @@
 
 ## Renderer and Supported Downloads
 
-The runtime creates a `winit` window, composes an RGBA frame on the CPU, and uploads it to a texture in `src/wgpu_graphics.rs` for wgpu presentation. Kitty graphics and terminal setup are absent from this source branch. `Cargo.toml` and `cargo tree --locked --depth 1` show the direct wgpu and winit dependencies.
+The runtime creates a `winit` window and sends scene commands to `src/gpu_scene.rs` for GPU composition from cached textures and primitive instances. `src/wgpu_graphics.rs` presents the completed GPU texture. Game logic and asset preparation remain on the CPU; the full software renderer is used for media generation and GPU parity tests. Kitty graphics and terminal setup are absent from this source branch. `Cargo.toml` and `cargo tree --locked --depth 1` show the direct wgpu and winit dependencies.
 
 The Release workflow builds these native targets:
 
@@ -22,7 +22,7 @@ Each archive contains `pacman` or `pacman.exe` plus `README.md`. Graphics, audio
 
 `.github/workflows/release.yml` runs on pull requests, pushes to `main`, `wgpu`, and `feat/wgpu-validation`, version-tag pushes matching `v*`, and manual dispatch. Manual dispatch tests the selected ref and uploads Actions artifacts; it does not publish a release. A ref without the wgpu/winit dependencies or wgpu help output fails the checks.
 
-Each native runner checks formatting, release packaging tests, direct renderer dependencies, Rust tests, Clippy, the optimized binary build, and its `--help` output. Linux installs the ALSA development package before building. Checks use `Cargo.lock`. The two expensive autopilot tests remain ignored by default. Workflow action dependencies are pinned to commit SHAs.
+Each native runner checks formatting, release packaging tests, direct renderer dependencies, Rust tests, Clippy, the optimized binary build, and its `--help` output. Linux installs the ALSA development package before building. Checks use `Cargo.lock`. Keep `wgpu-hal` and `gpu-allocator` on their shared `windows` 0.62.0 interface version; resolving the allocator against cpal's older interface breaks Direct3D compilation. The separate cpal Windows interface remains independent. The two expensive autopilot tests and one native GPU parity test remain ignored by default; `make gpu-test` explicitly runs the GPU readback comparison on a machine with a working adapter. Workflow action dependencies are pinned to commit SHAs.
 
 Every successful build uploads an Actions artifact retained for 14 days. Tags use the tag in the archive name; other runs use the commit SHA. Only a version-tag push runs the publishing job, and all four build jobs must succeed first. That job checks the four expected archives, writes and verifies SHA256 checksums, creates a draft GitHub Release, uploads all archives and the manifest, and publishes it. Tags with a suffix such as `-rc.1` are marked as prereleases. Ordinary build jobs have read-only repository access; only the publishing job has `contents: write`. The built-in `GITHUB_TOKEN` supplies that permission; no personal token is needed.
 
@@ -34,6 +34,7 @@ From the repository root:
 make ci
 make workflow-lint
 make docs-lint
+make gpu-test
 make release-package RELEASE_TARGET=aarch64-apple-darwin RELEASE_LABEL=local
 ```
 

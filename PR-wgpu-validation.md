@@ -14,7 +14,7 @@ The existing wgpu implementation needed explicit native-window instructions and 
 
 ## Validation
 
-- `make ci`: formatting, all-target tests, and warnings-as-errors Clippy pass; 129 tests pass and two expensive autopilot tests remain ignored by default.
+- `make ci`: formatting, all-target tests, and warnings-as-errors Clippy pass; 129 tests pass and two expensive autopilot tests and the later native GPU parity test remain ignored by default.
 - `cargo build --locked`: pass on macOS.
 - Markdown lint and whitespace checks: pass; README media paths exist and documented arcade defaults match the embedded files.
 - Homebrew formula version `1.0.0_1` was published in tap commit `788ce62`; source installation, formula test, installed help, style, and strict online audit pass on macOS.
@@ -22,4 +22,4 @@ The existing wgpu implementation needed explicit native-window instructions and 
 
 ## Compatibility and remaining risks
 
-Pacman uses CPU composition and wgpu texture presentation; Defender's current sprite atlas renderer is more extensive. Linux/Windows graphical and audio smoke tests remain unverified. No remote CI or SonarCloud scan was run, and no PR has been published. The follow-up [desktop release change](PR-desktop-releases.md) adds native build checks and release packaging; it does not retroactively validate Windows/Linux interactive play.
+The original wgpu port used CPU composition and wgpu texture presentation; the [GPU composition follow-up](PR-gpu-composition.md) replaces that live path; Defender's current sprite atlas renderer is more extensive. Linux/Windows graphical and audio smoke tests remain unverified. No SonarCloud scan or pull request has been published. Remote native CI is now being used for the desktop release and GPU composition follow-ups. The follow-up [desktop release change](PR-desktop-releases.md) adds native build checks and release packaging; it does not retroactively validate Windows/Linux interactive play.

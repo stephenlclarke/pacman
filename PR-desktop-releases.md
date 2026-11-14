@@ -7,7 +7,7 @@ See [ISSUE-desktop-releases.md](ISSUE-desktop-releases.md). Release builds need 
 
 ## Implementation
 
-- Confirmed `Cargo.toml`, `src/app.rs`, and `src/wgpu_graphics.rs` connect the game loop to a winit window and wgpu texture presentation; frame composition remains on the CPU.
+- Confirmed `Cargo.toml`, `src/app.rs`, and `src/wgpu_graphics.rs` connect the game loop to a winit window and wgpu texture presentation; a follow-up moves live scene composition onto the GPU; see [PR-gpu-composition.md](PR-gpu-composition.md).
 - Run the native release matrix on pull requests, source branch pushes, manual dispatch, and tags. macOS ARM64 and Windows x86-64 are explicit targets; existing Linux architectures remain supported by the workflow.
 - Check formatting, direct renderer dependencies, Rust tests, Clippy, release builds, and help output before packaging.
 - Share archive packaging through `scripts/package_release.py`. Include executable and README in macOS/Linux tarballs and the Windows ZIP. Reject invalid labels and missing files; test archive contents and Unix executable permissions, including when archives are created on Windows.
@@ -16,11 +16,11 @@ See [ISSUE-desktop-releases.md](ISSUE-desktop-releases.md). Release builds need 
 
 ## Validation
 
-- `make ci`: 129 Rust tests pass; two expensive tests stay ignored. Clippy, formatting, and three packaging tests pass.
+- `make ci`: 129 Rust tests pass; two expensive autopilot tests and the explicit native GPU test stay ignored by default. Clippy, formatting, and three packaging tests pass.
 - `make workflow-lint docs-lint` and `git diff --check`: pass.
 - Direct dependency inspection confirms wgpu and winit.
 - `make release-package RELEASE_TARGET=aarch64-apple-darwin RELEASE_LABEL=local`: pass. The extracted executable is Mach-O ARM64 and its wgpu help smoke test passes from a temporary directory.
-- Windows and Linux native builds are delegated to the updated GitHub Actions matrix; no graphical or audio smoke test has been claimed.
+- The native matrix exposed and prompted fixes for Windows archive permissions, the shared Direct3D interface dependency, and newer Clippy checks in maze iteration. Final cross-platform status is recorded in the GPU follow-up; no interactive graphical or audio smoke test has been claimed.
 
 ## Compatibility and Remaining Risks
 
