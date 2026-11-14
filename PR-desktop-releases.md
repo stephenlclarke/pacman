@@ -10,7 +10,7 @@ See [ISSUE-desktop-releases.md](ISSUE-desktop-releases.md). Release builds need 
 - Confirmed `Cargo.toml`, `src/app.rs`, and `src/wgpu_graphics.rs` connect the game loop to a winit window and wgpu texture presentation; frame composition remains on the CPU.
 - Run the native release matrix on pull requests, source branch pushes, manual dispatch, and tags. macOS ARM64 and Windows x86-64 are explicit targets; existing Linux architectures remain supported by the workflow.
 - Check formatting, direct renderer dependencies, Rust tests, Clippy, release builds, and help output before packaging.
-- Share archive packaging through `scripts/package_release.py`. Include executable and README in macOS/Linux tarballs and the Windows ZIP. Reject invalid labels and missing files; test archive contents and Unix executable permissions.
+- Share archive packaging through `scripts/package_release.py`. Include executable and README in macOS/Linux tarballs and the Windows ZIP. Reject invalid labels and missing files; test archive contents and Unix executable permissions, including when archives are created on Windows.
 - Publish all archives and a verified SHA256 manifest through a draft release only on version-tag pushes after all native builds pass. Use read-only build permissions, scoped release write permission, concurrency control, and pinned action commits.
 - Document downloads, checksum checks, extraction, local packaging, workflow triggers, publication, historical Kitty releases, signing limits, and the independent Homebrew update.
 

@@ -10,7 +10,7 @@ from package_release import TARGETS, WINDOWS_TARGET, package_release
 
 
 class PackageReleaseTests(unittest.TestCase):
-    def test_platform_archives_preserve_binary_and_readme(self):
+    def test_platform_archives_include_binary_readme_and_executable_permissions(self):
         for target in TARGETS:
             with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -18,7 +18,7 @@ class PackageReleaseTests(unittest.TestCase):
                 binary = root / "target" / target / "release" / name
                 binary.parent.mkdir(parents=True)
                 binary.write_bytes(b"test executable")
-                binary.chmod(0o755)
+                binary.chmod(0o644)
                 (root / "README.md").write_text("Release instructions", encoding="utf-8")
                 archive = package_release(root, target, "v1.0.1")
                 if target == WINDOWS_TARGET:

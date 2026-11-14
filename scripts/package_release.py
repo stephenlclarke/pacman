@@ -33,7 +33,10 @@ def package_release(root: Path, target: str, label: str) -> Path:
     else:
         with tarfile.open(archive, "w:gz") as output:
             for source, name in entries:
-                output.add(source, arcname=name)
+                info = output.gettarinfo(source, arcname=name)
+                info.mode = 0o755 if source == binary else 0o644
+                with source.open("rb") as data:
+                    output.addfile(info, data)
     return archive
 
 

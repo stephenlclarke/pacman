@@ -37,7 +37,7 @@ make docs-lint
 make release-package RELEASE_TARGET=aarch64-apple-darwin RELEASE_LABEL=local
 ```
 
-Use stable Rust, Python 3, `actionlint`, and `markdownlint`. `release-package` builds the selected target and calls the same Python packaging script as CI. Its archive appears in ignored `dist/`. The packager needs an existing target-specific release binary and rejects missing files, unsupported targets, and unsafe archive labels. Its tests cover all four archive layouts and executable permission preservation on Unix.
+Use stable Rust, Python 3, `actionlint`, and `markdownlint`. `release-package` builds the selected target and calls the same Python packaging script as CI. Its archive appears in ignored `dist/`. The packager needs an existing target-specific release binary and rejects missing files, unsupported targets, and unsafe archive labels. Its tests cover all four archive layouts and executable permissions in Unix archives.
 
 On a Windows machine, the equivalent commands are:
 
