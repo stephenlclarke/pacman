@@ -1,4 +1,4 @@
-.PHONY: fmt test clippy ci coverage sq sq-ci sonar run
+.PHONY: fmt test clippy ci coverage sq sq-ci sonar run package-test workflow-lint docs-lint release-package
 
 SONAR_SCANNER ?= sonar-scanner
 SONAR_ARGS ?= -Dsonar.qualitygate.wait=true
@@ -12,7 +12,7 @@ test:
 clippy:
 	cargo clippy --all-targets -- -D warnings
 
-ci: fmt test clippy
+ci: fmt test clippy package-test
 
 coverage:
 	@cargo llvm-cov --version >/dev/null 2>&1 || { \
@@ -44,3 +44,20 @@ sonar: sq
 
 run:
 	cargo run
+
+# Build and package the same archive used by GitHub Releases.
+RELEASE_TARGET ?= aarch64-apple-darwin
+RELEASE_LABEL ?= local
+
+package-test:
+	python3 -m unittest discover -s scripts -p 'test_*.py'
+
+workflow-lint:
+	actionlint
+
+docs-lint:
+	markdownlint README.md docs/*.md ISSUE-*.md PR-*.md
+
+release-package:
+	cargo build --locked --release --bin pacman --target $(RELEASE_TARGET)
+	python3 scripts/package_release.py --target $(RELEASE_TARGET) --label $(RELEASE_LABEL)

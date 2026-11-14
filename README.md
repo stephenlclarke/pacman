@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # PacMan
 
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_pacman&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_pacman)
@@ -15,7 +16,7 @@
 
 ---
 
-This is a Rust implementation of Pacman rendered in a native window with wgpu.
+This is a Rust implementation of Pacman rendered in a native window with `wgpu` and `winit`. The game opens its own window; Kitty graphics protocol support is no longer required.
 
 ![PacMan](docs/pacman.png)
 
@@ -25,11 +26,25 @@ This is a Rust implementation of Pacman rendered in a native window with wgpu.
 </p>
 <!-- markdownlint-enable MD033 -->
 
+## Build and Run
+
+The published wgpu port is on the `wgpu` branch; `main` and the `v1.0.0` tag still contain the older Kitty renderer. Start a source checkout with:
+
+```sh
+git clone --branch wgpu https://github.com/stephenlclarke/pacman.git
+cd pacman
+cargo build --locked
+cargo run --release
+```
+
+Use the current stable Rust toolchain. A graphical desktop session and a GPU supported by `wgpu` are required for interactive play. Graphics, sounds, and arcade defaults are embedded in the binary, so an installed game can run from any working directory.
+
 Run targets:
 
 - `cargo run`
 - `make run`
-- `cargo test`
+- `cargo build --locked`
+- `cargo test --all-targets`
 - `cargo fmt --check`
 - `cargo clippy --all-targets -- -D warnings`
 - `make ci`
@@ -39,35 +54,112 @@ Run targets:
 - `cargo run --example generate_start_sequence_gif`
 - `cargo run --example headless_autopilot`
 
-Run `cargo run` to launch the game in its own window.
+Run `cargo run` to launch the game in its own window. `cargo run -- --help` prints the supported launch options and controls.
+
+## Controls
+
+| Input | Action |
+| --- | --- |
+| Arrow keys / WASD | Queue Pacman's next direction |
+| Enter | Start from the title or scoring screen |
+| Left mouse click | Activate the on-screen start button |
+| Space | Pause or resume during gameplay |
+| Q / Esc / close window | Quit |
+
+Keyboard and mouse input are handled by `winit`. Resizing preserves the game's aspect ratio and centers the scene in the window.
+
+## Rendering
+
+`src/app.rs` runs the native `winit` event loop and fixed-timestep game updates. `src/render.rs` composes sprites, maze graphics, and text into an RGBA frame on the CPU. `src/wgpu_graphics.rs` uploads that frame to a GPU texture and presents it using a WGSL shader, nearest-neighbor sampling, and FIFO presentation when available. It also handles window resizing and surface recovery.
+
+The implementation uses the native window and GPU presentation approach from [Defender](https://github.com/stephenlclarke/defender). Pacman retains its existing software frame composition rather than adopting Defender's GPU sprite atlas renderer. The Kitty renderer and terminal setup modules have been removed.
 
 ## Install
 
+Install the wgpu build using Homebrew:
+
+```sh
+brew tap stephenlclarke/tap
+brew install stephenlclarke/tap/pacman
+pacman
+```
+
+Upgrade an existing installation and check the installed command:
+
+```sh
+brew update
+brew upgrade stephenlclarke/tap/pacman
+brew test stephenlclarke/tap/pacman
+pacman --help
+```
+
+The formula builds from source with Homebrew's Rust dependency and installs the `pacman` command. The published formula version `1.0.0_1` pins wgpu commit `cd49a1a0f407801cdc492ba61b4cdc5f8afb42c5` with a verified SHA256; this differs from the old `v1.0.0` tag. The optional `brew install --HEAD stephenlclarke/tap/pacman` follows the `wgpu` branch. Linux builds also require the formula's `alsa-lib` and `pkgconf` dependencies. Interactive play requires a graphical desktop and a GPU supported by wgpu; the help and formula test run without opening a window.
+
+Remove the Homebrew installation with `brew uninstall stephenlclarke/tap/pacman`. Scores and customisations in `~/.xyzzy/pacman/` remain available for a later installation.
+
 Install directly from git with Cargo:
 
-- `cargo install --git https://github.com/stephenlclarke/pacman pacman`
+- `cargo install --git https://github.com/stephenlclarke/pacman --branch wgpu pacman`
 
-`cargo install` builds with Cargo's release profile by default. Do not pass
-`--debug` unless you explicitly want a slower debug build.
+`cargo install` builds with Cargo's release profile by default. Do not pass `--debug` unless you explicitly want a slower debug build.
 
 After installation, run the game with:
 
 - `pacman`
 
-Version tags such as `v1.0.0` also publish prebuilt GitHub Release binaries for:
+### Download a Binary from GitHub
 
-- Linux `x86_64`
-- Linux `arm64`
-- Windows `x86_64`
-- macOS `arm64`
-- A `pacman-<tag>-SHA256SUMS.txt` manifest for the released assets
+Open [GitHub Releases](https://github.com/stephenlclarke/pacman/releases) and select a wgpu release made with the workflow described in [Releasing](docs/RELEASING.md). These archives contain the executable and this README; Rust and Cargo are not needed to run them.
+
+| Platform | Release asset |
+| --- | --- |
+| macOS Apple Silicon (ARM64) | `pacman-<tag>-aarch64-apple-darwin.tar.gz` |
+| Windows Intel/AMD (x86-64) | `pacman-<tag>-x86_64-pc-windows-msvc.zip` |
+| Linux Intel/AMD (x86-64) | `pacman-<tag>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux ARM64 | `pacman-<tag>-aarch64-unknown-linux-gnu.tar.gz` |
+
+Windows x86 means the 64-bit `x86_64` target here; 32-bit Windows is not built. macOS uses the native Metal backend through wgpu. Windows needs a working wgpu-compatible graphics driver. These are command-line executables that open a game window, not installers or macOS `.app` bundles. They are not Developer ID signed or notarized, and the Windows executable is not Authenticode signed.
+
+Download the matching archive and `pacman-<tag>-SHA256SUMS.txt` from the same release. Replace `<tag>` below with that release's tag. On macOS, compare the output of `shasum -a 256 pacman-<tag>-aarch64-apple-darwin.tar.gz` with the matching manifest entry, then extract and launch:
+
+```sh
+tar -xzf pacman-<tag>-aarch64-apple-darwin.tar.gz
+./pacman --help
+./pacman
+```
+
+On Windows, compare `Get-FileHash .\pacman-<tag>-x86_64-pc-windows-msvc.zip -Algorithm SHA256` with the matching manifest entry. In PowerShell, extract and launch:
+
+```powershell
+Expand-Archive .\pacman-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .\pacman
+.\pacman\pacman.exe --help
+.\pacman\pacman.exe
+```
+
+Existing `v1.0.0` release binaries predate the wgpu port. This workflow change does not replace those files or publish a new release by itself. Until a new wgpu tag is released, use Homebrew or the Cargo `wgpu` branch installation above. Branch, pull-request, and manual workflow runs provide build archives under GitHub Actions artifacts; only version-tag pushes publish assets to GitHub Releases.
 
 Notes:
 
 - The top score now persists between runs in `~/.xyzzy/pacman/high_scores.txt`;
   set `PACMAN_DATA_DIR` to redirect that file for local experiments or tests.
-- If `pacman` is not found after installation, ensure `~/.cargo/bin` is on your
-  `PATH`.
+- If `pacman` is not found after a Cargo installation, ensure `~/.cargo/bin` is on your `PATH`. For Homebrew, load the shell environment shown by `brew shellenv`.
+- If multiple installations exist, use `command -v pacman` to see which executable your shell launches. A stale Cargo binary can take precedence over the Homebrew installation.
+
+## Validation and Troubleshooting
+
+`make ci` checks formatting, runs all-target Rust tests and release packaging tests, and runs Clippy with warnings rejected. Packaging checks require Python 3. Run `make workflow-lint` with `actionlint` installed to check GitHub Actions, and `make docs-lint` with `markdownlint` installed to check all maintained Markdown. Two expensive autopilot simulations are ignored by default; run `cargo test --lib -- --ignored` when those simulations are needed. These tests exercise game and frame composition logic; they do not prove a live GPU window works.
+
+For a bounded headless game simulation without a window:
+
+```sh
+cargo run --release --example headless_autopilot -- 0 1 1000
+```
+
+Arguments are the starting seed, number of runs, and maximum steps per run. Generate README attract-sequence media with `cargo run --example generate_start_sequence_gif`; it writes `docs/start-sequence.gif` using the software renderer and accepts an optional output path.
+
+If a GPU adapter or surface cannot be created, run the game in a graphical desktop session with working graphics drivers. `pacman --help` verifies the executable independently of the graphics stack. Audio uses the default output device; if none is available, the game continues without sound. On Linux, the release workflow installs `libasound2-dev` for source builds; graphical and audio runtime checks remain necessary.
+
+See [Releasing](docs/RELEASING.md) for local packaging checks, workflow triggers, release asset names, checksums, and the tag publication procedure.
 
 ## SonarQube
 
@@ -75,8 +167,7 @@ Notes:
   workflow in CI.
 - `make sq` runs the same coverage step locally and then invokes
   `sonar-scanner`.
-- Local SonarQube scans require `cargo-llvm-cov`, `sonar-scanner`, and a
-  `SONAR_TOKEN` environment variable.
+- Local SonarQube scans require `cargo-llvm-cov`, the stable toolchain's `llvm-tools-preview` component, `sonar-scanner`, and a `SONAR_TOKEN` environment variable.
 
 ## XYZZY Mode
 
@@ -270,9 +361,7 @@ Sound effects and music are embedded in the binary and played in-process using
 platform-specific command such as `/usr/bin/afplay` and makes the audio path
 portable across macOS and Linux.
 
-macOS is still the only platform that has been actively validated. Rendering now
-uses `winit` and `wgpu`, and the audio layer no longer needs a separate Linux
-backend, but Linux support has not been tested end to end yet.
+Rendering uses `winit` for windows/input and `wgpu` for GPU presentation. The Homebrew source install, formula test, and strict online audit have been validated on macOS. A native launch remained running without errors, but this validation did not verify live visuals, keyboard interaction, or audio playback. Linux and Windows interactive operation has not been tested end to end.
 
 To finish Linux support, the remaining work is:
 
@@ -281,7 +370,5 @@ To finish Linux support, the remaining work is:
 - Run the game on real Linux machines or CI runners to confirm that `rodio` can
   open the default audio device cleanly on ALSA, PulseAudio, or PipeWire-backed
   setups.
-- Add Linux-specific install notes for graphics/audio stack quirks and any
-  distro packages needed for building or running the app.
-- Expand the test and release matrix so Linux builds and smoke tests are kept
-  healthy going forward.
+- Verify distribution-specific graphics drivers, display-server setup, and audio runtime requirements; Homebrew declares ALSA/pkgconf and the release workflow installs the ALSA development package.
+- Add live graphical and audio smoke tests; the release matrix runs Rust tests, lint, packaging checks, and a non-graphical `--help` smoke test on macOS ARM64, Windows x86-64, and both Linux architectures.

@@ -379,9 +379,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<()> {
 /// Prints help.
 fn print_help() {
     println!(
-        "Usage: cargo run [-- --help]
+        "Usage: pacman [--help]
+       cargo run [-- --help]
 
-Running `cargo run` launches the game in a wgpu window.
+Running `pacman` or `cargo run` launches the game in a wgpu window.
 
 Controls:
   Arrow keys / WASD  Move Pacman

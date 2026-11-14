@@ -736,7 +736,7 @@ fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
     };
 
     let transparent = rgba[..4].to_vec();
-    for chunk in rgba.chunks_exact_mut(4) {
+    for chunk in rgba.as_chunks_mut::<4>().0.iter_mut() {
         if chunk[..3] == transparent[..3] {
             chunk[3] = 0;
         }
@@ -751,7 +751,7 @@ fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
 
 fn rgb_to_rgba(raw: &[u8]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(raw.len() / 3 * 4);
-    for chunk in raw.chunks_exact(3) {
+    for chunk in raw.as_chunks::<3>().0.iter() {
         rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
     }
     rgba
@@ -767,7 +767,7 @@ fn grayscale_to_rgba(raw: &[u8]) -> Vec<u8> {
 
 fn grayscale_alpha_to_rgba(raw: &[u8]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(raw.len() / 2 * 4);
-    for chunk in raw.chunks_exact(2) {
+    for chunk in raw.as_chunks::<2>().0.iter() {
         rgba.extend_from_slice(&[chunk[0], chunk[0], chunk[0], chunk[1]]);
     }
     rgba

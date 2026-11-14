@@ -185,7 +185,7 @@ impl RenderedImage {
 
     /// Clears clear.
     fn clear(&mut self, color: Color) {
-        for pixel in self.pixels.chunks_exact_mut(4) {
+        for pixel in self.pixels.as_chunks_mut::<4>().0.iter_mut() {
             pixel[0] = color.0;
             pixel[1] = color.1;
             pixel[2] = color.2;
