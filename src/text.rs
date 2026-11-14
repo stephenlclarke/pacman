@@ -389,7 +389,9 @@ fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
     let pixels = match info.color_type {
         ColorType::Rgba => bytes.to_vec(),
         ColorType::Rgb => bytes
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 0xff])
             .collect(),
         ColorType::Grayscale => bytes
@@ -397,7 +399,9 @@ fn decode_png_image(bytes: &[u8]) -> anyhow::Result<RenderedImage> {
             .flat_map(|&gray| [gray, gray, gray, 0xff])
             .collect(),
         ColorType::GrayscaleAlpha => bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .flat_map(|gray_alpha| [gray_alpha[0], gray_alpha[0], gray_alpha[0], gray_alpha[1]])
             .collect(),
         ColorType::Indexed => unreachable!("indexed pngs should be expanded by the decoder"),
@@ -458,6 +462,13 @@ mod tests {
     fn arcade_exclamation_glyph_renders_visible_pixels() {
         let image = rasterize_text_image("!", WHITE, 16.0);
 
-        assert!(image.pixels.chunks_exact(4).any(|pixel| pixel[3] != 0));
+        assert!(
+            image
+                .pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|pixel| pixel[3] != 0)
+        );
     }
 }

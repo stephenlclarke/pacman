@@ -8,8 +8,7 @@ use pacman::{
     constants::{SCREEN_HEIGHT, SCREEN_WIDTH},
     game::{Game, UpdateInput},
     pacman::Direction,
-    render::Renderer,
-    terminal::TerminalGeometry,
+    render::{RenderTargetSize, Renderer},
 };
 
 const FRAME_DT: f32 = 0.25;
@@ -29,13 +28,7 @@ fn main() -> Result<()> {
             .with_context(|| format!("creating parent directory for {}", output.display()))?;
     }
 
-    let geometry = TerminalGeometry {
-        cols: 80,
-        rows: 36,
-        pixel_width: SCREEN_WIDTH as u16,
-        pixel_height: SCREEN_HEIGHT as u16,
-    };
-    let mut renderer = Renderer::new(geometry);
+    let mut renderer = Renderer::new(RenderTargetSize::new(SCREEN_WIDTH, SCREEN_HEIGHT));
     let mut game = Game::new();
     let _ = game.drain_events();
 

@@ -2,3 +2,6 @@
 docs/SONAR_TOKEN
 .DS_Store
 .scannerwork/
+
+/dist/
+__pycache__/
