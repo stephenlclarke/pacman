@@ -12,7 +12,7 @@ See [ISSUE-desktop-releases.md](ISSUE-desktop-releases.md). Release builds need 
 - Check formatting, direct renderer dependencies, Rust tests, Clippy, release builds, and help output before packaging.
 - Share archive packaging through `scripts/package_release.py`. Include executable and README in macOS/Linux tarballs and the Windows ZIP. Reject invalid labels and missing files; test archive contents and Unix executable permissions, including when archives are created on Windows.
 - Publish all archives and a verified SHA256 manifest through a draft release only on version-tag pushes after all native builds pass. Use read-only build permissions, scoped release write permission, concurrency control, and pinned action commits.
-- Document downloads, checksum checks, extraction, local packaging, workflow triggers, publication, historical Kitty releases, signing limits, and the independent Homebrew update.
+- Document downloads, checksum checks, extraction, local packaging, workflow triggers, publication, signing limits, and the independent Homebrew update.
 
 ## Validation
 
@@ -24,4 +24,4 @@ See [ISSUE-desktop-releases.md](ISSUE-desktop-releases.md). Release builds need 
 
 ## Compatibility and Remaining Risks
 
-The Windows download changes from a bare `.exe` to a `.zip` containing `pacman.exe` and the README. Windows x86 means x86-64, not 32-bit. Existing Linux release archives remain. This change does not create a tag or replace historical downloads. Windows/Linux native builds need the GitHub-hosted matrix; interactive graphics and audio, distribution signing, and notarization are outside the current validation. No personal access token is required to publish from Actions.
+The Windows download changes from a bare `.exe` to a `.zip` containing `pacman.exe` and the README. Windows x86 means x86-64, not 32-bit. Existing Linux release archives remain. Version tags control publication. Windows/Linux native builds need the GitHub-hosted matrix; interactive graphics and audio, distribution signing, and notarization are outside the current validation. No personal access token is required to publish from Actions.

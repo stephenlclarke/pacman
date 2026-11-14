@@ -3,7 +3,7 @@
 
 ## Renderer and Supported Downloads
 
-The runtime creates a `winit` window and sends scene commands to `src/gpu_scene.rs` for GPU composition from cached textures and primitive instances. `src/wgpu_graphics.rs` presents the completed GPU texture. Game logic and asset preparation remain on the CPU; the full software renderer is used for media generation and GPU parity tests. Kitty graphics and terminal setup are absent from this source branch. `Cargo.toml` and `cargo tree --locked --depth 1` show the direct wgpu and winit dependencies.
+The runtime creates a `winit` window and sends scene commands to `src/gpu_scene.rs` for GPU composition from cached textures and primitive instances. `src/wgpu_graphics.rs` presents the completed GPU texture. Game logic and asset preparation remain on the CPU; the full software renderer is used for media generation and GPU parity tests. `Cargo.toml` and `cargo tree --locked --depth 1` show the direct wgpu and winit dependencies.
 
 The Release workflow builds these native targets:
 
@@ -20,7 +20,7 @@ Each archive contains `pacman` or `pacman.exe` plus `README.md`. Graphics, audio
 
 ## Workflow Triggers and Checks
 
-`.github/workflows/release.yml` runs on pull requests, pushes to `main`, `wgpu`, and `feat/wgpu-validation`, version-tag pushes matching `v*`, and manual dispatch. Manual dispatch tests the selected ref and uploads Actions artifacts; it does not publish a release. A ref without the wgpu/winit dependencies or wgpu help output fails the checks.
+`.github/workflows/release.yml` runs on pull requests, pushes to `main` and `wgpu`, version-tag pushes matching `v*`, and manual dispatch. Manual dispatch tests the selected ref and uploads Actions artifacts; it does not publish a release. A ref without the wgpu/winit dependencies or wgpu help output fails the checks.
 
 Each native runner checks formatting, release packaging tests, direct renderer dependencies, Rust tests, Clippy, the optimized binary build, and its `--help` output. Linux installs the ALSA development package before building. Checks use `Cargo.lock`. Keep `wgpu-hal` and `gpu-allocator` on their shared `windows` 0.62.0 interface version; resolving the allocator against cpal's older interface breaks Direct3D compilation. The separate cpal Windows interface remains independent. The two expensive autopilot tests and one native GPU parity test remain ignored by default; `make gpu-test` explicitly runs the GPU readback comparison on a machine with a working adapter. Workflow action dependencies are pinned to commit SHAs.
 
@@ -52,13 +52,13 @@ python scripts/package_release.py --target x86_64-pc-windows-msvc --label local
 
 ## Publish a New Version
 
-1. Land the wgpu runtime and this workflow through the repository's pull-request process. The current remote `main` and old `v1.0.0` tag still contain the Kitty build; do not tag those sources as a wgpu release.
+1. Land the wgpu runtime and this workflow through the repository's pull-request process. Select the tested GPU-composition commit rather than an unrelated source ref.
 2. Select an unused version. Update `Cargo.toml` and the package entry in `Cargo.lock` together, and update documentation that names the released version.
 3. Run local checks and confirm that all native workflow jobs pass for the exact commit to release.
-4. Create an annotated tag such as `v1.0.1` on that validated commit and push that tag. Use `v1.0.1-rc.1` for a prerelease. Do not move or reuse an existing tag.
+4. Create an annotated tag such as `v1.1.0` on that validated commit and push that tag. Use `v1.1.0-rc.1` for a prerelease. Do not move or reuse an existing tag.
 5. Check the Release workflow and confirm that GitHub Releases contains all four archives and `pacman-<tag>-SHA256SUMS.txt`. Download and compare archive hashes before announcing the release.
 6. Update the Homebrew tap separately if it should follow the new release. Its existing `1.0.0_1` formula pins the published wgpu commit, and its HEAD source follows `wgpu`; a GitHub Release does not automatically update the tap.
 
 The workflow uses a draft so incomplete uploads are not published. If publication fails after draft creation, inspect the failed job and remove the incomplete draft before rerunning the workflow. The workflow deliberately refuses to overwrite an existing release. Never delete a published release or retag a version to recover an incomplete draft.
 
-User download, checksum, extraction, and launch instructions are in the [README](../README.md#download-a-binary-from-github). The old `v1.0.0` downloads remain historical Kitty binaries until a new version is published. Editing or manually running this workflow does not publish a new version.
+User download, checksum, extraction, and launch instructions are in the [README](../README.md#download-a-binary-from-github). Editing or manually running this workflow does not publish a new version.

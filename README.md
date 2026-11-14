@@ -16,7 +16,9 @@
 
 ---
 
-This is a Rust implementation of Pacman rendered in a native window with `wgpu` and `winit`. The game opens its own window; Kitty graphics protocol support is no longer required.
+This is a Rust implementation of Pacman rendered in a native window with `wgpu` and `winit`. The game opens its own window.
+
+[Download released binaries](https://github.com/stephenlclarke/pacman/releases) for macOS ARM64 and Windows x86-64. See the [download and launch instructions](#download-a-binary-from-github) for the correct archive, checksum verification, and extraction steps.
 
 ![PacMan](docs/pacman.png)
 
@@ -28,10 +30,10 @@ This is a Rust implementation of Pacman rendered in a native window with `wgpu` 
 
 ## Build and Run
 
-GPU scene composition and the updated desktop release workflow are on `feat/wgpu-validation`. The older `wgpu` branch uses CPU composition with GPU presentation; remote `main` and the `v1.0.0` tag still contain the Kitty renderer. Start a source checkout with:
+Version `v1.1.0` includes GPU scene composition and native desktop release packages. Start a source checkout with:
 
 ```sh
-git clone --branch feat/wgpu-validation https://github.com/stephenlclarke/pacman.git
+git clone --branch v1.1.0 https://github.com/stephenlclarke/pacman.git
 cd pacman
 cargo build --locked
 cargo run --release
@@ -74,7 +76,7 @@ Keyboard and mouse input are handled by `winit`. Resizing preserves the game's a
 
 Game logic, asset decoding, glyph image creation, and draw-command preparation remain on the CPU. Live play no longer rasterizes a complete RGBA frame on the CPU or uploads one every frame. Unchanged image assets stay in GPU memory; expired dynamic images leave the cache. Integrated and discrete GPUs are supported through wgpu, with a high-performance adapter preference. If no supported adapter can be created, startup reports an error.
 
-The implementation follows [Defender](https://github.com/stephenlclarke/defender)'s native window and GPU rendering approach. `src/render.rs` remains a software reference for deterministic tests and generated README media, and supplies shared viewport transforms. `make gpu-test` compares actual GPU readback with the software reference. Kitty renderer and terminal setup modules have been removed.
+The implementation follows [Defender](https://github.com/stephenlclarke/defender)'s native window and GPU rendering approach. `src/render.rs` remains a software reference for deterministic tests and generated README media, and supplies shared viewport transforms. `make gpu-test` compares actual GPU readback with the software reference.
 
 ## Install
 
@@ -95,13 +97,13 @@ brew test stephenlclarke/tap/pacman
 pacman --help
 ```
 
-The formula builds from source with Homebrew's Rust dependency and installs the `pacman` command. Its currently published pin has wgpu presentation with CPU frame composition; use the source branch above to try the new GPU scene composer before the tap is updated. The published formula version `1.0.0_1` pins wgpu commit `cd49a1a0f407801cdc492ba61b4cdc5f8afb42c5` with a verified SHA256; this differs from the old `v1.0.0` tag. The optional `brew install --HEAD stephenlclarke/tap/pacman` follows the `wgpu` branch. Linux builds also require the formula's `alsa-lib` and `pkgconf` dependencies. Interactive play requires a graphical desktop and a GPU supported by wgpu; the help and formula test run without opening a window.
+The formula builds from source with Homebrew's Rust dependency and installs the `pacman` command. Its currently published pin has wgpu presentation with CPU frame composition; use the source branch above to try the new GPU scene composer before the tap is updated. The published formula version `1.0.0_1` pins wgpu commit `cd49a1a0f407801cdc492ba61b4cdc5f8afb42c5` with a verified SHA256. The optional `brew install --HEAD stephenlclarke/tap/pacman` follows the `wgpu` branch. Linux builds also require the formula's `alsa-lib` and `pkgconf` dependencies. Interactive play requires a graphical desktop and a GPU supported by wgpu; the help and formula test run without opening a window.
 
 Remove the Homebrew installation with `brew uninstall stephenlclarke/tap/pacman`. Scores and customisations in `~/.xyzzy/pacman/` remain available for a later installation.
 
 Install directly from git with Cargo:
 
-- `cargo install --git https://github.com/stephenlclarke/pacman --branch feat/wgpu-validation pacman`
+- `cargo install --git https://github.com/stephenlclarke/pacman --tag v1.1.0 pacman`
 
 `cargo install` builds with Cargo's release profile by default. Do not pass `--debug` unless you explicitly want a slower debug build.
 
@@ -111,39 +113,38 @@ After installation, run the game with:
 
 ### Download a Binary from GitHub
 
-Open [GitHub Releases](https://github.com/stephenlclarke/pacman/releases) and select a wgpu release made with the workflow described in [Releasing](docs/RELEASING.md). These archives contain the executable and this README; Rust and Cargo are not needed to run them.
+Open the [v1.1.0 release](https://github.com/stephenlclarke/pacman/releases/tag/v1.1.0) or [all GitHub Releases](https://github.com/stephenlclarke/pacman/releases) and download the archive for your computer. The publication process is described in [Releasing](docs/RELEASING.md). These archives contain the executable and this README; Rust and Cargo are not needed to run them.
 
 | Platform | Release asset |
 | --- | --- |
-| macOS Apple Silicon (ARM64) | `pacman-<tag>-aarch64-apple-darwin.tar.gz` |
-| Windows Intel/AMD (x86-64) | `pacman-<tag>-x86_64-pc-windows-msvc.zip` |
-| Linux Intel/AMD (x86-64) | `pacman-<tag>-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux ARM64 | `pacman-<tag>-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Apple Silicon (ARM64) | [macOS ARM64 archive](https://github.com/stephenlclarke/pacman/releases/download/v1.1.0/pacman-v1.1.0-aarch64-apple-darwin.tar.gz) |
+| Windows Intel/AMD (x86-64) | [Windows x86-64 archive](https://github.com/stephenlclarke/pacman/releases/download/v1.1.0/pacman-v1.1.0-x86_64-pc-windows-msvc.zip) |
+| Linux Intel/AMD (x86-64) | [Linux x86-64 archive](https://github.com/stephenlclarke/pacman/releases/download/v1.1.0/pacman-v1.1.0-x86_64-unknown-linux-gnu.tar.gz) |
+| Linux ARM64 | [Linux ARM64 archive](https://github.com/stephenlclarke/pacman/releases/download/v1.1.0/pacman-v1.1.0-aarch64-unknown-linux-gnu.tar.gz) |
 
 Windows x86 means the 64-bit `x86_64` target here; 32-bit Windows is not built. macOS uses the native Metal backend through wgpu. Windows needs a working wgpu-compatible graphics driver. These are command-line executables that open a game window, not installers or macOS `.app` bundles. They are not Developer ID signed or notarized, and the Windows executable is not Authenticode signed.
 
-Download the matching archive and `pacman-<tag>-SHA256SUMS.txt` from the same release. Replace `<tag>` below with that release's tag. On macOS, compare the output of `shasum -a 256 pacman-<tag>-aarch64-apple-darwin.tar.gz` with the matching manifest entry, then extract and launch:
+Download the matching archive and [SHA256 checksum manifest](https://github.com/stephenlclarke/pacman/releases/download/v1.1.0/pacman-v1.1.0-SHA256SUMS.txt) from the same release. The examples below use `v1.1.0`; substitute the selected version when installing another release. On macOS, compare the output of `shasum -a 256 pacman-v1.1.0-aarch64-apple-darwin.tar.gz` with the matching manifest entry, then extract and launch:
 
 ```sh
-tar -xzf pacman-<tag>-aarch64-apple-darwin.tar.gz
+tar -xzf pacman-v1.1.0-aarch64-apple-darwin.tar.gz
 ./pacman --help
 ./pacman
 ```
 
-On Windows, compare `Get-FileHash .\pacman-<tag>-x86_64-pc-windows-msvc.zip -Algorithm SHA256` with the matching manifest entry. In PowerShell, extract and launch:
+On Windows, compare `Get-FileHash .\pacman-v1.1.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256` with the matching manifest entry. In PowerShell, extract and launch:
 
 ```powershell
-Expand-Archive .\pacman-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .\pacman
+Expand-Archive .\pacman-v1.1.0-x86_64-pc-windows-msvc.zip -DestinationPath .\pacman
 .\pacman\pacman.exe --help
 .\pacman\pacman.exe
 ```
 
-Existing `v1.0.0` release binaries predate the wgpu port. This workflow change does not replace those files or publish a new release by itself. Until a new wgpu tag is released, use Homebrew for the previously published native-window build or the Cargo source branch above for GPU scene composition. Branch, pull-request, and manual workflow runs provide build archives under GitHub Actions artifacts; only version-tag pushes publish assets to GitHub Releases.
+Version-tag builds publish the archives and checksum manifest to GitHub Releases. Before a version is tagged, tested builds can be downloaded from the [Release workflow's Actions artifacts](https://github.com/stephenlclarke/pacman/actions/workflows/release.yml). Branch, pull-request, and manual runs upload build artifacts without publishing a version.
 
 Notes:
 
-- The top score now persists between runs in `~/.xyzzy/pacman/high_scores.txt`;
-  set `PACMAN_DATA_DIR` to redirect that file for local experiments or tests.
+- Scores and overrides use `$HOME/.xyzzy/pacman/` when `HOME` is set. Otherwise, including a typical Windows PowerShell session, they use `.xyzzy/pacman/` under the current working directory. Set `PACMAN_DATA_DIR` to a fixed writable directory to keep the same data when launching from different folders.
 - If `pacman` is not found after a Cargo installation, ensure `~/.cargo/bin` is on your `PATH`. For Homebrew, load the shell environment shown by `brew shellenv`.
 - If multiple installations exist, use `command -v pacman` to see which executable your shell launches. A stale Cargo binary can take precedence over the Homebrew installation.
 

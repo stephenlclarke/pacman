@@ -3,7 +3,7 @@ name: Release
 on:
   pull_request:
   push:
-    branches: [main, wgpu, feat/wgpu-validation]
+    branches: [main, wgpu]
     tags: ["v*"]
   workflow_dispatch:
 

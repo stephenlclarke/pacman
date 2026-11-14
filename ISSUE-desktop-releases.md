@@ -3,7 +3,7 @@
 
 ## Problem
 
-The existing tag-only release workflow could publish an old Kitty source tree, copied a bare Windows executable without user instructions, and did not test either desktop platform before release. Repository documentation did not explain the downloadable archive names, checksums, or publication process.
+The existing tag-only release workflow lacked renderer checks, copied a bare Windows executable without user instructions, and did not test either desktop platform before release. Repository documentation did not explain the downloadable archive names, checksums, or publication process.
 
 ## Expected Behavior
 
