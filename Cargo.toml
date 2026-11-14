@@ -15,9 +15,9 @@ bytemuck = { version = "1.25", features = ["derive"] }
 fastrand = "2.3"
 png = "0.18"
 pollster = "0.4"
-rodio = "0.21"
+rodio = "0.22"
 wgpu = "29.0.3"
 winit = "0.30.13"
 
 [dev-dependencies]
-gif = "0.13"
+gif = "0.14"

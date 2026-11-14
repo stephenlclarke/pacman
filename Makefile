@@ -56,7 +56,7 @@ workflow-lint:
 	actionlint
 
 docs-lint:
-	markdownlint README.md docs/*.md ISSUE-*.md PR-*.md
+	markdownlint *.md docs/*.md
 
 release-package:
 	cargo build --locked --release --bin pacman --target $(RELEASE_TARGET)
